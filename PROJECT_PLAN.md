@@ -60,7 +60,7 @@
 
 ### 1.4 当前实施进度（2026-10-01）
 
-真机网页源码位于 [`esp/videoesp/web/index.html`](esp/videoesp/web/index.html)，随 ESP v0.1.0 固件嵌入，连接热点后通过 `http://192.168.4.1/` 访问；构建和操作见 [ESP 使用说明](esp/videoesp/README.md)。新版代码与软件检查已完成，尚待烧录及真机验收。
+真机网页源码位于 [`esp/videoesp/web/index.html`](esp/videoesp/web/index.html)，随 ESP v0.1.0 固件嵌入，连接热点后通过 `http://192.168.4.1/` 访问；构建和操作见 [ESP 使用说明](esp/videoesp/README.md)。当前已上传 v0.1.1 修复版，手机刷新及完整真机验收待确认。
 
 独立高级模拟原型入口为 [`acousticlab-preview/index.html`](acousticlab-preview/index.html)，使用说明见 [`acousticlab-preview/README.md`](acousticlab-preview/README.md)。该原型无需设备；此前视觉检查通过 [`start-preview.cmd`](acousticlab-preview/start-preview.cmd) 启动，以 `http://127.0.0.1:8000/` 访问。下表的模拟界面能力不表示 C5 已实现对应测量。
 
@@ -116,6 +116,12 @@ Debug/Release CLI重新生成和编译均通过、无警告；7项同源C算法�
 交付 [C5 v0.1.0 Release](firmware-c5/generated/release/v0.1.0/README.md) 包含HEX/BIN/ELF/MAP及SHA256；具体步骤和待测表见 [C5验证记录](firmware-c5/generated/VALIDATION.md)。本次未烧录，不勾选交流回环、麦克风、真实10 Hz、<8 ms或30分钟稳定性；系统v0.1仍待联合实物验收。
 
 当前基线：C5 与 ESP v0.1.0 的软件均已交付。先烧录两板新版，查询确认 C5 为 IDLE、48 kHz、FFT=2048、测试音关闭；再做 PA4 经 1 kΩ 到 PA0 的 1 kHz 回环、−12→−18 dBFS 电平差、麦克风输入、真实预览速率及 30 分钟运行。实测记录填写到 C5 VALIDATION 后同步 TODO，未提供的测试结果保持待办。
+
+### 1.7 ESP v0.1.1 刷新修复（2026-10-01）
+
+用户确认 v0.1.0 已烧录，并反馈刷新后卡住、随后连接失败。截图已有 C5 STATUS 字段，ESP 周期诊断为“—”；因此不能认定 UART 始终零接收。修复 HTTP 整块同步写入及 WebSocket 单槽刷新交接路径，减少回调栈占用，新增独立 HTTP 诊断与首连立即诊断。详见 [版本说明](esp/videoesp/CHANGELOG.md)。没有卡死时的异常日志，唯一根因尚未证明。
+
+v0.1.1 已 Release 编译并通过 COM8 烧录，写入哈希校验通过；串口确认版本、16 MB Flash、8,385,943 B PSRAM、启动循环栈余量 5,328 B。14 项协议检查、15 类浏览器场景及额外 6 次连续刷新通过，浏览器错误 0（本地夹具）。手机真热点刷新、UART 实测计数、NVS 及长期运行仍保留待办，不据软件测试标为硬件验收通过。
 
 ## 2. 编程原则：直接实现，不做过度防御
 

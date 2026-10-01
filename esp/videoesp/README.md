@@ -1,4 +1,4 @@
-# AcousticLab ESP v0.1.0
+# AcousticLab ESP v0.1.1
 
 ESP32-S3 N16R8 的热点、串口桥接和完整 v0.1 网页。测量值全部来自 CRC 校验通过的 C5 数据；网页不生成模拟测量，也不重新计算 FFT。网页随固件烧录，无需上传文件系统、联网或加载 CDN。
 
@@ -50,6 +50,10 @@ VS Code PlatformIO 打开本目录，Build；关闭占用 COM8 的串口监视�
 - `include/protocol.h`：有界解析、CRC 和字段检查。
 - `web/`：实际内置网页；`scripts/embed_web.py` 确定性 gzip 打包到 `.pio/generated/web_assets.h`。
 - `test/`、`tools/`：本地测试数据和浏览器检查，不进入固件。
-- `release/v0.1.0/`：本次构建固件、哈希及构建说明。
+- `release/v0.1.1/`：本次构建固件、哈希及构建说明。
 
 本次软件检查与待做的硬件验收见 [VALIDATION.md](VALIDATION.md)。此前最小固件的实物验证不代替本版烧录、NVS 和长期运行验收。
+
+## v0.1.1 刷新修复
+
+HTTP 改为有界非阻塞传输；WebSocket 两槽交接但只保留一个测量客户端。回调栈减负，连接后立即发送诊断。页面及 `/api/info` 增加接收字节、有效帧、坏帧、复位原因、最慢循环和最低栈余量。COM8 上传与启动核对已完成，手机刷新复测待确认。详细变更见 [CHANGELOG.md](CHANGELOG.md)。

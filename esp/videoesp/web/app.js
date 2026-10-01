@@ -76,6 +76,10 @@
     $('uptimes').textContent=duration(status?.uptime)+' / '+duration(stats.uptime);
     $('heap').textContent=stats.freeHeap ? format(stats.freeHeap/1024,1)+' / '+format(stats.minHeap/1024,1)+' KiB' : '—';
     $('coalesced').textContent=(stats.coalesced??'—')+' / '+(stats.restarts??'—'); $('frames').textContent=format(stats.frames,0);
+    $('rxBytes').textContent=format(stats.rxBytes,0)+' B';
+    $('resetReason').textContent=({1:'上电',3:'软件复位',4:'异常崩溃',5:'中断看门狗',6:'任务看门狗',7:'其他看门狗',9:'供电欠压'})[stats.resetReason] || (stats.resetReason===undefined?'—':String(stats.resetReason));
+    $('maxLoop').textContent=Number.isFinite(stats.maxLoopUs)?format(stats.maxLoopUs/1000,2)+' ms':'—';
+    $('stackFree').textContent=Number.isFinite(stats.stackFree)?format(stats.stackFree,0)+' B':'—';
     dirty=true;
   }
   function duration(ms) { if(!Number.isFinite(ms)) return '—'; const s=Math.floor(ms/1000); return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m '+s%60+'s'; }
@@ -154,6 +158,7 @@
     };
   }
   function waveValues(wave) {
+    // ADC values stay unchanged in exports.
     const offset=config.coupling==='ac' ? wave.pairs.reduce((s,[a,b])=>s+(a+b)/2,0)/wave.groupCount : 0;
     return wave.pairs.map(([a,b])=>[(a-offset)/2048,(b-offset)/2048]);
   }
@@ -266,4 +271,5 @@
   function animate(){draw();requestAnimationFrame(animate);}requestAnimationFrame(animate);
   setInterval(()=>{const now=performance.now(),elapsed=now-rateAt;for(const type of [2,3,4]){rates[type]=counts[type]*1000/elapsed;counts[type]=0;}rateAt=now;update();},1000);
   syncConfig();connect();
+  window.addEventListener('pagehide',()=>{clearTimeout(reconnectTimer);if(socket)socket.close(1000,'page closed');});
 })();

@@ -2,12 +2,13 @@
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
 #include <Preferences.h>
-#include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
+#include <esp_system.h>
 #include "protocol.h"
 #include "web_assets.h"
+#include "asset_http.h"
 #ifndef C5_UART_RX_PIN
 #define C5_UART_RX_PIN 16
 #endif
@@ -19,16 +20,21 @@
 #endif
 
 namespace {
-constexpr char version[]="0.1.0";
+constexpr char version[]="0.1.1";
 constexpr uint32_t commandTimeout=2000, deviceTimeout=3000;
 HardwareSerial c5(1);
-WebServer http(80);
+size_t httpInfo(char*,size_t);
+AssetHttp http(httpInfo);
 WebSocketsServer ws(81);
 Preferences preferences;
 Protocol::Parser parser;
 StaticJsonDocument<768> savedConfig;
 char ssid[24];
 bool storageReady=false, connected=false;
+bool helloPending=false;
+char jsonOutput[2048];
+StaticJsonDocument<1536> request;
+uint32_t maxLoopUs=0;
 uint8_t activeClient=0;
 uint32_t lastByte=0, lastFlush=0, lastStats=0, bytesReceived=0, previousBytes=0;
 uint32_t rate=0, framesReceived=0, coalesced=0, lastC5Uptime=0, restarts=0;
@@ -48,13 +54,13 @@ bool online() { return status.size && uint32_t(millis()-status.at)<deviceTimeout
 uint8_t mode() { return status.size ? status.bytes[12] : 0; }
 bool generatorSupported() { return online() && (Protocol::u16(status.bytes+14)&Protocol::generatorSupported); }
 template<size_t N> void sendJson(uint8_t client,const StaticJsonDocument<N>& doc) {
-  char out[2048]; const size_t n=serializeJson(doc,out,sizeof(out));
-  if(n<sizeof(out)) ws.sendTXT(client,out,n);
+  const size_t n=serializeJson(doc,jsonOutput,sizeof(jsonOutput));
+  if(n<sizeof(jsonOutput)) ws.sendTXT(client,jsonOutput,n);
 }
 void event(uint8_t client,const char* kind,uint32_t id,const char* message,uint16_t seq=0,int result=-1) {
   StaticJsonDocument<256> doc;
   doc["event"]=kind; doc["id"]=id; doc["message"]=message; doc["seq"]=seq;
-  if(result>=0) doc["result"]=result;
+  if(!strcmp(kind,"result")) doc["result"]=result;
   if(connected && client==activeClient) sendJson(client,doc);
 }
 void defaults() {
@@ -97,6 +103,16 @@ void hello(uint8_t client) {
   doc["storage"]=storageReady; doc["config"]=savedConfig.as<JsonObject>();
   doc["busy"]=pending.active; sendJson(client,doc);
 }
+size_t httpInfo(char* out,size_t size) {
+  StaticJsonDocument<768> doc;
+  doc["version"]=version; doc["ssid"]=ssid; doc["online"]=online();
+  doc["flash"]=ESP.getFlashChipSize(); doc["psram"]=ESP.getPsramSize();
+  doc["uptime"]=millis(); doc["rxBytes"]=bytesReceived;
+  doc["frames"]=framesReceived; doc["badFrames"]=parser.badFrames;
+  doc["resetReason"]=int(esp_reset_reason()); doc["maxLoopUs"]=maxLoopUs;
+  doc["stackFree"]=uxTaskGetStackHighWaterMark(nullptr);
+  return serializeJson(doc,out,size);
+}
 void statistics() {
   const uint32_t now=millis(), elapsed=now-lastStats;
   rate=elapsed ? uint32_t(uint64_t(bytesReceived-previousBytes)*1000/elapsed) : 0;
@@ -108,6 +124,8 @@ void statistics() {
   doc["badFrames"]=parser.badFrames; doc["coalesced"]=coalesced; doc["restarts"]=restarts;
   doc["freeHeap"]=ESP.getFreeHeap(); doc["minHeap"]=ESP.getMinFreeHeap();
   doc["statusAge"]=status.size ? int32_t(now-status.at) : -1;
+  doc["resetReason"]=int(esp_reset_reason()); doc["maxLoopUs"]=maxLoopUs;
+  doc["stackFree"]=uxTaskGetStackHighWaterMark(nullptr);
   doc["busy"]=pending.active; sendJson(activeClient,doc);
 }
 void finish(const char* message,int result) {
@@ -187,16 +205,19 @@ void flush() {
 }
 void onWebSocket(uint8_t client,WStype_t type,uint8_t* payload,size_t size) {
   if(type==WStype_CONNECTED) {
-    connected=true; activeClient=client; hello(client);
-    Cache* caches[]={&status,&level,&spectrum,&waveform};
-    for(Cache* cache:caches) if(cache->size && uint32_t(millis()-cache->at)<(cache==&status ? deviceTimeout : 1000U))
-      ws.sendBIN(client,cache->bytes,cache->size);
+    if(connected && activeClient!=client) ws.disconnect(activeClient);
+    connected=true; activeClient=client; helloPending=true;
+    Serial.printf("WS connected: client=%u\n",client);
     return;
   }
-  if(type==WStype_DISCONNECTED) { if(client==activeClient) connected=false; return; }
+  if(type==WStype_DISCONNECTED) {
+    Serial.printf("WS disconnected: client=%u\n",client);
+    if(client==activeClient) { connected=false; helloPending=false; }
+    return;
+  }
   if(type!=WStype_TEXT) return;
   if(size>768) { event(client,"error",0,"invalid_request"); return; }
-  StaticJsonDocument<1536> request;
+  request.clear();
   if(deserializeJson(request,payload,size,DeserializationOption::NestingLimit(3))) { event(client,"error",0,"invalid_request"); return; }
   const uint32_t id=request["id"]|0U; const char* action=request["action"]|"";
   if(!strcmp(action,"save")) {
@@ -219,33 +240,31 @@ void onWebSocket(uint8_t client,WStype_t type,uint8_t* payload,size_t size) {
     sendCommand(client,id,3,-1,frequency,levelValue*100,request["enabled"]);
   } else event(client,"error",id,"unknown_command");
 }
-void serve(const WebAsset& asset) {
-  http.sendHeader("Cache-Control","no-store"); http.sendHeader("Content-Encoding","gzip");
-  http.sendHeader("X-Content-Type-Options","nosniff");
-  http.send_P(200,asset.mime,reinterpret_cast<const char*>(asset.data),asset.size);
-}
 } // namespace
 void setup() {
   Serial.begin(115200); c5.setRxBufferSize(4096); c5.begin(115200,SERIAL_8N1,C5_UART_RX_PIN,C5_UART_TX_PIN);
   loadConfig(); WiFi.mode(WIFI_AP); WiFi.setSleep(false);
   snprintf(ssid,sizeof(ssid),"AcousticLab-%04X",unsigned(ESP.getEfuseMac()&0xffff));
   if(!WiFi.softAP(ssid,ACOUSTICLAB_AP_PASSWORD,1,false,1)) { Serial.println("SoftAP start failed"); return; }
-  http.on("/",HTTP_GET,[](){ serve(webAssets[0]); });
-  for(const WebAsset& asset:webAssets) { const WebAsset* p=&asset; http.on(asset.path,HTTP_GET,[p](){ serve(*p); }); }
-  http.on("/api/info",HTTP_GET,[](){
-    StaticJsonDocument<256> doc; doc["version"]=version; doc["ssid"]=ssid; doc["online"]=online();
-    doc["flash"]=ESP.getFlashChipSize(); doc["psram"]=ESP.getPsramSize();
-    String json; serializeJson(doc,json); http.sendHeader("Cache-Control","no-store"); http.send(200,"application/json",json);
-  });
-  http.onNotFound([](){ http.send(404,"text/plain; charset=utf-8","未找到页面"); });
   http.begin(); ws.onEvent(onWebSocket); ws.begin(); ws.enableHeartbeat(15000,3000,2);
   esp_task_wdt_init(8,true); if(esp_task_wdt_status(nullptr)!=ESP_OK) esp_task_wdt_add(nullptr);
   Serial.printf("AcousticLab %s AP: %s password: %s URL: http://%s/\n",version,ssid,ACOUSTICLAB_AP_PASSWORD,WiFi.softAPIP().toString().c_str());
   Serial.printf("C5 UART RX=%d TX=%d 115200 8N1; Flash=%u PSRAM=%u\n",C5_UART_RX_PIN,C5_UART_TX_PIN,ESP.getFlashChipSize(),ESP.getPsramSize());
+  Serial.printf("Reset reason=%d; loop stack free=%u bytes\n",int(esp_reset_reason()),unsigned(uxTaskGetStackHighWaterMark(nullptr)));
 }
 void loop() {
-  pollC5(); http.handleClient(); ws.loop(); pollC5(); flush();
+  const uint32_t began=micros();
+  pollC5(); http.loop(); ws.loop(); pollC5();
+  if(helloPending && connected) {
+    helloPending=false; hello(activeClient);
+    Cache* caches[]={&status,&level,&spectrum,&waveform};
+    for(Cache* cache:caches) if(cache->size) cache->dirty=true;
+    statistics();
+  }
+  flush();
   if(pending.active && uint32_t(millis()-pending.since)>=commandTimeout) finish(pending.ack ? "status_timeout" : "reply_timeout",-1);
   if(uint32_t(millis()-lastStats)>=1000) statistics();
   esp_task_wdt_reset();
+  maxLoopUs=max(maxLoopUs,uint32_t(micros()-began));
+  delay(1);
 }

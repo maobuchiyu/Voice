@@ -5,6 +5,8 @@ async (page) => {
   const ready=()=>page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('查询成功'));
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await fixture('silent=0&fft=2048&generator=1&reboot=1');await page.reload();await ready();
+  for(let i=0;i<6;i++) { await page.reload(); await ready(); }
+  await page.waitForFunction(()=>document.querySelector('#rxBytes').textContent==='100,000 B');
   console.log('Ready; checking device controls');
   check(await page.locator('#startButton').isEnabled(),'Start must be enabled in IDLE');
   await page.locator('#startButton').click();

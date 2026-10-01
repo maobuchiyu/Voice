@@ -22,7 +22,7 @@ function command(socket,r){
   },150);
 }
 function connection(socket){
-  clients.add(socket);packet(socket,{event:'hello',version:'0.1.0-test-fixture',ssid:'LOCAL TEST FIXTURE',flash:16777216,psram:8388608,storage:true,config,busy});sendStatus();
+  clients.add(socket);packet(socket,{event:'hello',version:'0.1.1-test-fixture',ssid:'LOCAL TEST FIXTURE',flash:16777216,psram:8388608,storage:true,config,busy});sendStatus();
   let input=Buffer.alloc(0);
   socket.on('data',data=>{input=Buffer.concat([input,data]);while(input.length>=2){let n=input[1]&127,offset=2;const masked=!!(input[1]&128),opcode=input[0]&15;if(n===126){if(input.length<4)return;n=input.readUInt16BE(2);offset=4;}if(n===127||n>8192){socket.destroy();return;}if(masked)offset+=4;if(input.length<offset+n)return;let payload=Buffer.from(input.subarray(offset,offset+n));if(masked){const mask=input.subarray(offset-4,offset);for(let i=0;i<n;i++)payload[i]^=mask[i%4];}input=input.subarray(offset+n);if(opcode===8){socket.end();return;}if(opcode===9){packet(socket,payload,10);continue;}if(opcode===1){try{command(socket,JSON.parse(payload));}catch{}}}});
   socket.on('close',()=>clients.delete(socket));socket.on('error',()=>clients.delete(socket));

@@ -46,3 +46,7 @@ view=scope/spectrum，input=mic/loop/external（仅记录），coupling=ac/dc（
 二进制消息保留完整 C5 帧。stats 每秒发送 online、rxBytes、rxRate（字节/秒）、frames、badFrames、coalesced、restarts、freeHeap、minHeap、statusAge（毫秒，−1 无状态）、uptime（ESP 毫秒）、busy。STATUS 超过 3 秒未刷新则离线，预览缓存超过 1 秒不推送。
 
 `GET /api/info` 返回版本、SSID、online、Flash 和 PSRAM。CSV/JSON 由浏览器生成，是当前显示快照，不是连续音频或完整 FFT 导出。
+
+## v0.1.1 诊断补充
+
+stats 新增 resetReason（ESP-IDF 枚举）、maxLoopUs（本次启动最慢循环微秒）、stackFree（ESP-IDF 栈最低余量字节）。首次连接立即发送。`/api/info` 新增 uptime、rxBytes、frames、badFrames 及以上字段，HTTP 不依赖 WebSocket。接收字节和有效帧为本次 ESP 上电累计值；“—”表示未收到诊断，不能视为计数 0。WebSocket 两个槽仅用于刷新交接，新测量连接会关闭旧连接。

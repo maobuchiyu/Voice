@@ -1,0 +1,58 @@
+{
+  "version": "0.1.1",
+  "date": "2026-10-01",
+  "board": "ESP32-S3 N16R8",
+  "ramBytes": 57120,
+  "flashBytes": 787513,
+  "hardwareUploaded": true,
+  "phoneRefreshVerified": false,
+  "files": {
+    "bootloader.bin": {
+      "size": 15104,
+      "sha256": "2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363"
+    },
+    "firmware.bin": {
+      "size": 787872,
+      "sha256": "4364993e9147a2a2e8dadbcd292e48dcc41faf554937ba60b911ef0d2b62fb3e"
+    },
+    "firmware.elf": {
+      "size": 13087448,
+      "sha256": "508b6640558360e07c098ac6f7681141e0b9f6b4debc9f8981409acf814c660b"
+    },
+    "partitions.bin": {
+      "size": 3072,
+      "sha256": "bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce"
+    },
+    "source.zip": {
+      "size": 1120283,
+      "sha256": "6f673933364d669db64d99bae6e3fd694705f7448f64f4086b5315c03a7d4e38"
+    }
+  },
+  "source": {
+    "boards/acousticlab_esp32s3_n16r8.json": "f65eeef0dd114048e1296da586a9a76ab1557913eacd2f7c44fc7255c26d29da",
+    "CHANGELOG.md": "363ca66ea29eb54023d006c5a43db9bab3c4617ac378ac904c3261aebabc3d34",
+    "include/asset_http.h": "80ed7e8956e650e1ec4d084e41720c6a16279b7f5487c966675558919dcb04ab",
+    "include/protocol.h": "f22f881b58dd6e8c0f2845786f06025c04b2ace892a87cc57b367d7bf36b6ac8",
+    "include/README": "dc6d9be88119a80edf773eb5a659f4470caf81ed5e95dbfd0cd3c7a9686ccd8c",
+    "output/playwright/acousticlab-desktop-scope.png": "faa69056d81853df2ab24376d900722ccc6a6ee43db63d78f7c4eaf276b4ce5d",
+    "output/playwright/acousticlab-desktop-spectrum.png": "d7238eb14739a74b16e2a6663286225a75fcd82bde38792ce1a90cfc26bf65b4",
+    "output/playwright/acousticlab-mobile-scope.png": "8766c10da20020978e4e772d70a40549cd87a822b12c2577b9de699a50b252f7",
+    "output/playwright/acousticlab-mobile-spectrum.png": "011a7d4783358d02ce561e78f639829ec2ccca7e3ff6f6bdc62d8ab001f66b3a",
+    "platformio.ini": "082204b7d7493ca3ec32e2cb476a15210ec694bd109a096fcdbdb4e85bc39455",
+    "PROTOCOL.md": "51a7d6733df91e52ccb0f2ac3701ba09c3f39faff042aec87e423f6b5aa74b3e",
+    "README.md": "38db4cc8a7e13ea4e8dc0973657b1cb9c6d8feb1a28707755081955c49c78338",
+    "scripts/embed_web.py": "ba5d9348aa80d599320d4dbb4f65bdaac693544d94c21805852dec067445a7bc",
+    "src/main.cpp": "6e0f342ae3eef2e87310a5bbb8291f79d003b2d17b0109a0ccc15384644cb477",
+    "test/fixtures.cjs": "9e1ebb70b698183e81184deb2b09a873028b7ca777e73ce07f296f8f20ce9770",
+    "test/protocol.test.cjs": "edefef277756a9ea23c372db4fc8ac7425fa257c7adfeff2c892cd9c4233271d",
+    "test/README": "95291bce496cd8b6f92ab6f9359119d77f02fc22eec7047cc38cc818a38c2b5d",
+    "tools/browser_checks.js": "16341b31996530174baddec0b18d6f31e35172187712218a5421f4602a73f852",
+    "tools/dev_server.cjs": "f84f95e6a64baaa503326a418cc5c529b0a7df238418196ed9151419dc0d5d29",
+    "tools/run_browser_checks.cjs": "3b2310e3af74987139c934b0d023daa9f564efe6a8459e5ac60a0eff8fb4ac94",
+    "VALIDATION.md": "e8bb355ef0fc95079e4abe2cc1269a254c5cf20282ea4a3fd4cda23e3d94a0ec",
+    "web/app.js": "798d920d79243be5d58aaf48f9b0a21d0731d930181dce936c11222c2966ef65",
+    "web/index.html": "94ac24593ca4cc2823ca03c276fe071e1f7669d4e6806d4cced60e889df09fc1",
+    "web/protocol.js": "2d6c61038bdb8147bbc1dd2853d94b96799696fa111cbf7f89725d6afd0ce460",
+    "web/styles.css": "47f57d945495cf72007108673fd61249636c1af92b5a0ac327b576a3e46ca678"
+  }
+}
