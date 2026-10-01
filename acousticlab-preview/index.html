@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1018">
+  <title>AcousticLab · 声学测量工作台</title>
+  <link rel="stylesheet" href="styles.css?v=20260927-qa1">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="AcousticLab 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span class="brand-name">Acoustic<span>Lab</span></span>
+      </a>
+      <div class="topbar-context">
+        <span class="context-divider"></span>
+        <div>
+          <div class="page-title">声学测量工作台</div>
+          <div class="page-subtitle">实时分析 <span>·</span> v0.1 原型</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <span class="demo-badge"><span class="badge-dot"></span>演示模式</span>
+        <button class="icon-button" id="aboutButton" aria-label="关于演示模式" title="关于演示模式">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5m0-8h.01"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="demo-note" aria-label="演示提示">
+        <span class="note-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20"><path d="M10 2.5 18 17H2z"></path><path d="M10 7v4m0 2.5h.01"></path></svg>
+        </span>
+        <p><strong>界面预览</strong><span>当前显示模拟数据，尚未连接 STM32C532 或 ESP32-S3。</span></p>
+        <button class="note-close" id="dismissNote" aria-label="关闭提示">×</button>
+      </section>
+
+      <section class="status-grid" aria-label="设备状态">
+        <article class="status-card device-status">
+          <span class="status-icon amber-icon"><svg viewBox="0 0 24 24"><rect x="5" y="6" width="14" height="12" rx="2"></rect><path d="M9 3v3m6-3v3M9 18v3m6-3v3M2 10h3m14 0h3M2 14h3m14 0h3"></path></svg></span>
+          <div class="status-copy"><span class="eyebrow">C5 设备</span><strong><span class="status-light"></span>演示中</strong><small>等待设备连接</small></div>
+          <span class="status-chevron">···</span>
+        </article>
+        <article class="status-card">
+          <span class="status-icon blue-icon"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-5 4 10 3-8 2 3h4"></path></svg></span>
+          <div class="status-copy"><span class="eyebrow">采样率</span><strong>48,000 <em>Hz</em></strong><small>单声道 · 12 位 ADC</small></div>
+        </article>
+        <article class="status-card">
+          <span class="status-icon violet-icon"><svg viewBox="0 0 24 24"><path d="M4 18V6m0 12h16M7 15l4-5 3 3 5-7"></path></svg></span>
+          <div class="status-copy"><span class="eyebrow" id="topScaleLabel">时基</span><strong><span id="topScaleValue">1.00</span> <em id="topScaleUnit">ms/div</em></strong><small id="topScaleHint">总窗口 10 ms · 48 kS/s</small></div>
+        </article>
+        <article class="status-card calibration-card">
+          <span class="status-icon green-icon"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 7.7 7 10 4.1-2.3 7-5.5 7-10V6z"></path><path d="M9 12l2 2 4-4"></path></svg></span>
+          <div class="status-copy"><span class="eyebrow">校准状态</span><strong>未校准</strong><small>显示相对 dBFS</small></div>
+          <span class="calibration-tag">相对测量</span>
+        </article>
+      </section>
+
+      <div class="view-switch-row">
+            <div class="view-tabs" role="tablist" aria-label="仪器视图">
+              <button class="view-tab is-active" id="scopeTab" data-view="scope" role="tab" aria-selected="true"><span class="tab-wave-icon">∿</span>示波器</button>
+              <button class="view-tab" id="spectrumTab" data-view="spectrum" role="tab" aria-selected="false"><span class="tab-spectrum-icon">▥</span>频谱分析</button>
+            </div>
+            <span class="view-hint" id="viewHint">时域 · CH1 输入波形</span>
+      </div>
+      <section class="workspace-grid">
+        <div class="visual-column">
+          <article class="panel scope-panel" id="scopePanel">
+            <div class="scope-heading">
+              <div><div class="scope-title-line"><span class="scope-channel-badge">CH1</span><h2>输入波形</h2><span class="scope-live"><i></i>采集</span></div><p>单声道 · 合成波形演示 · 幅度单位 FS</p></div>
+              <div class="scope-top-readout"><span id="scopeAcqStatus">RUN</span><span>触发 <b id="scopeTriggerReadout">CH1 ↑ 0.00 FS</b></span></div>
+            </div>
+            <div class="scope-plot-layout">
+              <div class="scope-y-axis" id="scopeYAxis" aria-hidden="true"></div>
+              <div class="scope-screen">
+                <canvas id="scopeCanvas" aria-label="示波器 CH1 模拟输入波形"></canvas>
+                <div class="scope-trigger-marker" aria-hidden="true">▼</div>
+                <div class="scope-channel-marker" aria-hidden="true">1▶</div>
+                <div class="scope-corner-readout"><span id="scopeFreqOverlay">1.000 kHz</span><i>CH1</i></div>
+              </div>
+            </div>
+            <div class="scope-time-axis" aria-hidden="true"><div></div><div id="scopeXAxis"></div></div>
+            <div class="scope-screen-footer"><span><b class="scope-led"></b><strong>CH1</strong><i id="scopeInputText">MAX4466 麦克风</i></span><span><b>时基</b><strong id="scopeTimeReadout">1.00 ms/div</strong><em>·</em><b>垂直</b><strong id="scopeScaleReadout">0.2 FS/div</strong></span><span id="scopeAcquisitionLabel">自动触发</span></div>
+          </article>
+
+          <article class="panel spectrum-panel is-hidden" id="spectrumPanel">
+            <div class="panel-heading">
+              <div>
+                <div class="heading-title-row"><h2 id="spectrumTitle">实时频谱</h2><span class="live-tag"><span></span><span id="spectrumModeTag">实时预览</span></span></div>
+                <p class="panel-description" id="spectrumDescription">完整 FFT 分析 · 页面显示 256 点峰值包络</p>
+              </div>
+              <div class="chart-meta"><span class="legend-dot spectrum-dot"></span><span id="chartMetricName">幅度</span> <b id="chartUnit">dBFS</b><span class="meta-divider"></span><span id="chartRateLabel">更新</span> <b id="chartRateValue">10 Hz</b></div>
+            </div>
+            <div class="chart-wrap spectrum-wrap">
+              <div class="y-axis-labels" id="spectrumYAxis" aria-hidden="true"></div>
+              <div class="plot-frame">
+                <canvas id="spectrumCanvas" aria-label="模拟实时频谱图"></canvas>
+                <div class="chart-tooltip" id="spectrumTooltip"><span id="tooltipTitle">主峰</span><strong id="tooltipValue">1.00 kHz</strong><em id="tooltipLevel">−24.8 dBFS</em></div>
+              </div>
+            </div>
+            <div class="spectrum-axis" aria-hidden="true"><div></div><div class="spectrum-x-plot" id="spectrumXAxis"></div></div>
+            <div class="chart-footer"><span><span class="footer-dot"></span>输入：<b id="inputLabel">MAX4466 麦克风</b><i class="help-hint" title="这里仅记录物理跳线接法，不会自动切换输入。">i</i></span><span>窗口 <b id="windowStatus">42.67 ms</b> <span class="footer-separator">·</span> Hann 窗</span></div>
+          </article>
+
+          <article class="panel harmonics-panel is-hidden" id="harmonicsPanel" aria-labelledby="harmonicsTitle">
+            <div class="panel-heading">
+              <div><h2 id="harmonicsTitle">谐波分析 <span class="harmonics-demo">模拟结果</span></h2><p class="panel-description">基波及第 2～5 次谐波 · 相对基波幅度</p></div>
+              <button class="export-button" id="harmonicsCsvButton" disabled>导出谐波 CSV ↓</button>
+            </div>
+            <div class="harmonics-summary">
+              <div><span>总谐波失真 · THD</span><strong id="harmonicsThd">—</strong><small id="harmonicsThdDb">H2～H5 的幅度平方和开方 / H1</small></div>
+              <div><span>基波频率</span><strong id="harmonicsFundamental">—</strong><small id="harmonicsStatus">等待稳定正弦</small></div>
+            </div>
+            <div class="harmonics-table-wrap">
+              <table class="harmonics-table"><caption class="sr-only">H1 至 H5 的模拟谐波分析数据</caption><thead><tr><th scope="col">阶次</th><th scope="col">频率 / Hz</th><th scope="col">电平 / dBFS</th><th scope="col">相对 / dBc</th><th scope="col">幅度比</th></tr></thead><tbody id="harmonicsRows"><tr><td colspan="5">选择电气回环，查看稳定正弦的谐波示例。</td></tr></tbody></table>
+            </div>
+            <div class="harmonics-footer"><p id="harmonicsNote">THD 适用于稳定正弦；实时麦克风、扫频和衰减视图不输出 THD。</p><button class="button button-secondary" id="harmonicsDemoButton">查看回环示例</button></div>
+          </article>
+
+          <article class="panel waveform-panel is-hidden" id="waveformPanel">
+            <div class="panel-heading compact-heading">
+              <div><div class="heading-title-row"><h2 id="waveformTitle">波形包络</h2><span class="sample-tag">64 组 min / max</span></div><p class="panel-description" id="waveformDescription">最近一个采样块 · 约 10.67 ms</p></div>
+              <div class="chart-meta"><span class="legend-dot waveform-dot"></span><span>归一化幅度</span></div>
+            </div>
+            <div class="waveform-wrap"><canvas id="waveformCanvas" aria-label="模拟波形包络图"></canvas><div class="wave-center-line"></div><span class="wave-y-label top">+1.0</span><span class="wave-y-label middle">0</span><span class="wave-y-label bottom">−1.0</span></div>
+            <div class="wave-time-axis"><span>0 ms</span><span>2 ms</span><span>4 ms</span><span>6 ms</span><span>8 ms</span><span>10.67 ms</span></div>
+          </article>
+
+          <div class="stream-strip">
+            <div class="stream-label"><span class="stream-icon"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"></path><circle cx="18" cy="17" r="2"></circle></svg></span><div><strong>串口数据链路</strong><small>UART · 8N1 · CRC16</small></div></div>
+            <div class="stream-stat"><small>目标带宽</small><strong>≤ 9 <em>KB/s</em></strong></div>
+            <div class="stream-stat"><small>模拟吞吐</small><strong id="throughputValue">8.6 <em>KB/s</em></strong></div>
+            <div class="stream-meter" aria-label="链路占用约 75%"><div><span></span></div><small>约 75% 占用</small></div>
+          </div>
+        </div>
+
+        <aside class="control-column">
+          <article class="panel levels-panel">
+            <div class="panel-heading compact-heading">
+              <div><div class="heading-title-row"><h2 id="readingsTitle">示波器读数</h2><span class="readings-time" id="readingsUpdate"><span class="measurement-pulse"></span>实时更新</span></div><p class="panel-description" id="readingsDescription">CH1 输入 · 相对满量程 FS</p></div>
+              <button class="more-button" aria-label="测量读数说明" title="演示模式下为模拟测量值">···</button>
+            </div>
+            <div class="metrics-grid">
+              <div class="metric-card metric-rms"><div class="metric-label" id="rmsLabel">RMS 电平 <span>ⓘ</span></div><div class="metric-value" id="rmsValue">−18.2<span>dBFS</span></div><div class="metric-foot" id="rmsFoot"><span class="trend-icon">↗</span>较上一窗口 <b>+0.4 dB</b></div><div class="metric-sparkline rms-spark" aria-hidden="true"></div></div>
+              <div class="metric-card metric-peak"><div class="metric-label" id="peakLabel">Peak 峰值 <span>ⓘ</span></div><div class="metric-value" id="peakValue">−10.7<span>dBFS</span></div><div class="metric-foot" id="peakFoot"><span class="peak-indicator"></span>峰值保持 <b>2.4 s</b></div><div class="peak-bar"><span></span></div></div>
+              <div class="metric-card metric-freq"><div class="metric-label" id="freqLabel">主频 <span>ⓘ</span></div><div class="metric-value" id="freqValue">1,002<span>Hz</span></div><div class="metric-foot" id="freqFoot"><span class="mini-wave">∿</span>完整 FFT 插值</div></div>
+              <div class="metric-card metric-clip"><div class="metric-label" id="clipLabel">削顶样本 <span>ⓘ</span></div><div class="metric-value" id="clipValue">0<span>个</span></div><div class="metric-foot" id="clipFoot"><span class="ok-check">✓</span>输入范围正常</div></div>
+            </div>
+            <div class="measurement-caveat"><span class="caveat-icon">i</span><p>未做声学校准，当前仅显示相对电平，<b>不代表 dB SPL</b>。</p></div>
+          </article>
+
+          <article class="panel scope-controls-panel" id="scopeControlsPanel">
+            <div class="panel-heading compact-heading scope-controls-heading"><div><div class="heading-title-row"><h2>采集与触发</h2><span class="control-caption">CH1 · 单通道</span></div></div><span class="scope-control-led"><i></i>就绪</span></div>
+            <div class="scope-control-grid">
+              <label class="scope-control-field"><span>时基 <small>TIME / DIV</small></span><span class="scope-select-wrap"><select id="timebaseSelect" aria-label="时基"> <option value="0.5">0.5 ms/div</option><option value="1" selected>1 ms/div</option><option value="2">2 ms/div</option><option value="5">5 ms/div</option><option value="10">10 ms/div</option></select><b>⌄</b></span></label>
+              <label class="scope-control-field"><span>垂直档位 <small>CH1 / DIV</small></span><span class="scope-select-wrap"><select id="verticalScaleSelect" aria-label="CH1 垂直档位"><option value="0.1">0.1 FS/div</option><option value="0.2" selected>0.2 FS/div</option><option value="0.5">0.5 FS/div</option><option value="1">1.0 FS/div</option></select><b>⌄</b></span></label>
+              <label class="scope-control-field"><span>触发沿 <small>EDGE</small></span><span class="scope-select-wrap"><select id="triggerSlopeSelect" aria-label="触发沿"><option value="rising">上升沿 ↑</option><option value="falling">下降沿 ↓</option></select><b>⌄</b></span></label>
+              <label class="scope-control-field"><span>耦合 <small>COUPLING</small></span><span class="scope-select-wrap"><select id="couplingSelect" aria-label="输入耦合"><option value="ac" selected>AC 耦合</option><option value="dc">DC 耦合</option></select><b>⌄</b></span></label>
+            </div>
+            <div class="trigger-level-row"><label for="triggerLevel">触发电平 <b id="triggerLevelValue">0.00 FS</b></label><input id="triggerLevel" type="range" min="-0.6" max="0.6" step="0.01" value="0" aria-label="触发电平"></div>
+            <div class="trigger-mode-row"><span>触发模式</span><div class="scope-segmented" role="group" aria-label="触发模式"><button class="is-selected" data-trigger-mode="auto">AUTO</button><button data-trigger-mode="normal">NORMAL</button></div></div>
+            <div class="scope-button-row"><button class="scope-run-button" id="scopeRunButton"><span class="run-pause-icon"><i></i><i></i></span><span id="scopeRunText">停止</span></button><button class="scope-secondary-button" id="scopeAutoButton">AUTOSET</button><button class="scope-single-button" id="scopeSingleButton">SINGLE</button></div>
+            <p class="scope-control-note"><span>i</span>FS 为 ADC 满量程归一化单位；物理输入由跳线选择。</p>
+          </article>
+
+          <article class="panel controls-panel is-hidden" id="spectrumControlsPanel">
+            <div class="panel-heading compact-heading controls-heading"><div><div class="heading-title-row"><h2>分析控制</h2><span class="idle-pill" id="analysisState"><span></span>运行中</span></div></div><span class="control-caption">模拟交互</span></div>
+            <label class="field-label" for="modeSelect">测量模式</label>
+            <div class="select-wrap"><select id="modeSelect"><option value="rta">实时频谱分析</option><option value="loop">电气回环</option><option value="sweep">逐点扫频 · 预览</option><option value="decay">衰减测量 · 预览</option></select><svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"></path></svg></div>
+            <div class="control-row">
+              <label class="field-label" for="fftSelect">FFT 长度</label>
+              <div class="select-wrap short-select"><select id="fftSelect"><option value="2048">2,048 点</option><option value="4096">4,096 点</option></select><svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"></path></svg></div>
+            </div>
+            <div class="button-row"><button class="button button-primary" id="analysisButton"><span class="button-pause" id="analysisButtonIcon"><i></i><i></i></span><span id="analysisButtonText">暂停绘图</span></button><button class="button button-secondary" id="resetButton" title="重置演示图表"><svg viewBox="0 0 20 20"><path d="M4 5v4h4M5.3 8A6 6 0 1 1 5 12"></path></svg><span>重置</span></button></div>
+          </article>
+
+          <article class="panel generator-panel">
+            <div class="generator-heading"><div class="generator-icon"><svg viewBox="0 0 24 24"><path d="M3 12h3l2.2-6 4.1 12 2.4-7 1.4 3H21"></path></svg></div><div><h2>测试信号发生器</h2><p>DAC 输出 · 正弦波</p></div><span class="optional-tag">可选</span></div>
+            <div class="generator-controls">
+              <label class="generator-field"><span>频率</span><span class="input-with-unit"><input id="toneFrequency" type="number" min="20" max="20000" value="1000" aria-label="测试音频率"><em>Hz</em></span></label>
+              <label class="generator-field"><span>峰值电平 <b id="toneLevelLabel">−12 dBFS</b></span><input id="toneLevel" class="range-input" type="range" min="-40" max="-6" value="-12" aria-label="测试音峰值电平"></label>
+            </div>
+            <button class="button button-outline" id="toneButton"><span class="play-icon" id="toneButtonIcon">▶</span><span id="toneButtonText">开启测试音</span></button>
+            <p class="generator-note"><span>!</span>仅为界面演示，不会产生实际声音输出</p>
+          </article>
+
+          <article class="panel export-panel">
+            <div class="export-copy"><span class="export-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 18v3h14v-3"></path></svg></span><div><strong>导出测量数据</strong><small>当前示例数据 · 支持表格与配置</small></div></div>
+            <div class="export-buttons"><button class="export-button" id="csvButton">CSV <span>↓</span></button><button class="export-button" id="jsonButton">JSON <span>↓</span></button></div>
+          </article>
+        </aside>
+      </section>
+
+      <footer class="page-footer"><span><span class="footer-brand-mark">A</span>AcousticLab <i>声学测量平台</i></span><span>STM32C532CC <b>·</b> ESP32-S3 <b>·</b> 网页预览</span><span class="footer-version">原型界面 <b>2026.09</b></span></footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="modal-backdrop" id="aboutModal" hidden>
+    <section class="about-modal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+      <button class="modal-close" id="closeAbout" aria-label="关闭">×</button>
+      <span class="modal-mark"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span></span>
+      <h2 id="aboutTitle">关于这个预览</h2>
+      <p>这是根据 AcousticLab 项目计划制作的独立网页原型。示波器和频谱读数均为浏览器生成的模拟数据，硬件控制与实时测量尚未接入。</p>
+      <div class="about-list"><span>示波器 <b>CH1 · 时基 / 触发</b></span><span>频谱视图 <b>256 点预览</b></span><span>垂直单位 <b>相对满量程 FS</b></span></div>
+      <button class="button button-primary modal-ok" id="closeAboutAction">明白了</button>
+    </section>
+  </div>
+  <script src="app.js?v=20260927-qa1"></script>
+</body>
+</html>

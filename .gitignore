@@ -1,0 +1,32 @@
+# Local build environments and caches
+**/build/
+**/.pio/
+**/.venv/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.playwright-cli/
+output/
+
+# Generated firmware binaries (keep release notes and source)
+*.elf
+*.map
+*.bin
+*.hex
+*.o
+*.obj
+*.su
+*.a
+*.exe
+*.dll
+**/release/**/source.zip
+
+# Local credentials and machine state
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,5 @@
+build
+mx.scratch
+!.settings
+upper_pc/.venv/
+upper_pc/__pycache__/

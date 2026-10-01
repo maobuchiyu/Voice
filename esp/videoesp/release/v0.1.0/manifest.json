@@ -1,0 +1,56 @@
+{
+  "version": "0.1.0",
+  "date": "2026-10-01",
+  "board": "ESP32-S3 N16R8",
+  "environment": "esp32s3_n16r8",
+  "ramBytes": 51376,
+  "flashBytes": 782833,
+  "hardwareUploaded": false,
+  "files": {
+    "bootloader.bin": {
+      "size": 15104,
+      "sha256": "2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363"
+    },
+    "firmware.bin": {
+      "size": 783200,
+      "sha256": "af2ab04b27d2a139a7868da9db547029eacbbf5ce5a1107f916a5e75d6297f6f"
+    },
+    "firmware.elf": {
+      "size": 13281932,
+      "sha256": "f3e482ef7aec578ba838bece807f08d734be09c199d711845b907568c296a7f4"
+    },
+    "partitions.bin": {
+      "size": 3072,
+      "sha256": "bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce"
+    },
+    "source.zip": {
+      "size": 1115527,
+      "sha256": "71fb610b026022075287eb20aeb53de93c40c327d5bc44794ffa864528259cd3"
+    }
+  },
+  "source": {
+    "boards/acousticlab_esp32s3_n16r8.json": "f65eeef0dd114048e1296da586a9a76ab1557913eacd2f7c44fc7255c26d29da",
+    "include/protocol.h": "f22f881b58dd6e8c0f2845786f06025c04b2ace892a87cc57b367d7bf36b6ac8",
+    "include/README": "dc6d9be88119a80edf773eb5a659f4470caf81ed5e95dbfd0cd3c7a9686ccd8c",
+    "platformio.ini": "7299f5067fb38569fa8a76a466b4a7e2a3f2be5c591a15cc5a24a3299c5df66e",
+    "PROTOCOL.md": "6e4920d0489f2794aaf7f9139fa9edadd3f5182d9248982a338b98bdb5e24d7a",
+    "README.md": "76816cfff0e51331b072e98b302c1ed6324afed635a89d84e26d7c749406a86d",
+    "scripts/embed_web.py": "ba5d9348aa80d599320d4dbb4f65bdaac693544d94c21805852dec067445a7bc",
+    "src/main.cpp": "7d8c961920a0a942c19afede40ff4f2cc58a71bd5fe08b49b1e49866b6369500",
+    "test/fixtures.cjs": "9e1ebb70b698183e81184deb2b09a873028b7ca777e73ce07f296f8f20ce9770",
+    "test/protocol.test.cjs": "edefef277756a9ea23c372db4fc8ac7425fa257c7adfeff2c892cd9c4233271d",
+    "test/README": "95291bce496cd8b6f92ab6f9359119d77f02fc22eec7047cc38cc818a38c2b5d",
+    "tools/browser_checks.js": "67f0c3551370ec97963b2d9ace72921738df17affe88308da7976053017356d8",
+    "tools/dev_server.cjs": "9dfb531db4e8c6e27d5a12368159abff4432fbcfdf979d1d8ab55483c076e473",
+    "tools/run_browser_checks.cjs": "3b2310e3af74987139c934b0d023daa9f564efe6a8459e5ac60a0eff8fb4ac94",
+    "VALIDATION.md": "85d62991403925bf1c4ff06a2546abbd6cdb5f4da97a7e3dfd7cfcf10d65de50",
+    "web/app.js": "80a1c2f558eb11d5e2e6c1e4ae0306757a6d75c808b73f1924b477b35cdf59c2",
+    "web/index.html": "f8094d93f25a2c4b05a433c8ff0b3c9b6a68542b1489f57269340a967699d851",
+    "web/protocol.js": "2d6c61038bdb8147bbc1dd2853d94b96799696fa111cbf7f89725d6afd0ce460",
+    "web/styles.css": "47f57d945495cf72007108673fd61249636c1af92b5a0ac327b576a3e46ca678",
+    "output/playwright/acousticlab-desktop-scope.png": "d2d07ee89f1e5fc965cad0f535f2496ed7b9bf4d90c1d23c828fc44442b5b754",
+    "output/playwright/acousticlab-desktop-spectrum.png": "58bc2803fa24323be8e18c25c01d5ec147294bb13ac06d8575555d03f9300646",
+    "output/playwright/acousticlab-mobile-scope.png": "bac880e34ae600b683d08b73ce818eebc9cada95bdb9eccd151eec4b1dab3c58",
+    "output/playwright/acousticlab-mobile-spectrum.png": "49cb30d0f016f29eae78f3b1259caaa4551573cfeb2468ccfd3ff970dd267482"
+  }
+}

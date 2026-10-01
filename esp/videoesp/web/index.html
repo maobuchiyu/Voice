@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101715"><title>AcousticLab · 声学测量工作台</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23b8d88a'/%3E%3Cpath d='M4 17c6-20 10 18 15 0s7-6 9-3' fill='none' stroke='%23101715' stroke-width='3'/%3E%3C/svg%3E"><link rel="stylesheet" href="/styles.css"><script defer src="/protocol.js"></script><script defer src="/app.js"></script></head>
+<body>
+<div class="shell">
+  <header class="topbar"><a href="/" class="brand"><span class="brand-icon">∿</span>Acoustic<span>Lab</span></a><div class="brand-context">声学测量工作台 <small id="version">v0.1</small></div><div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionLabel">正在连接 ESP</span><button id="helpButton" class="icon" aria-label="使用说明">?</button></div></header>
+  <main>
+    <div class="page-intro"><div><span class="eyebrow">LIVE MEASUREMENT</span><h1>让声音变得可见。</h1><p>实时观察输入波形与电平，记录每一次测量。</p></div><span class="device-tag" id="ssid">ESP32-S3 · STM32C5</span></div>
+    <section class="status-grid" aria-label="设备状态">
+      <article class="status-card"><span class="eyebrow">C5 设备</span><strong id="deviceState">等待连接</strong><small id="deviceDetail">连接 ESP 热点后自动读取状态</small></article>
+      <article class="status-card"><span class="eyebrow">采样率</span><strong id="sampleRate">— <em>Hz</em></strong><small>单声道 · 12 位 ADC</small></article>
+      <article class="status-card"><span class="eyebrow">FFT 长度</span><strong id="fftLength">—</strong><small id="fftDetail">等待设备状态</small></article>
+      <article class="status-card"><span class="eyebrow">测量基准</span><strong>相对 dBFS</strong><small>未做声学校准 · 不代表 dB SPL</small></article>
+    </section>
+    <div class="notice" id="notice" role="status" aria-live="polite">等待设备连接。页面打开后不会自动开始分析或开启测试音。</div>
+    <div class="workspace">
+      <div class="visual-column">
+        <article class="panel chart-panel">
+          <div class="chart-toolbar"><div class="tabs" role="tablist" aria-label="仪器视图"><button id="scopeTab" role="tab" aria-selected="true">∿ 示波器</button><button id="spectrumTab" role="tab" aria-selected="false">▥ 频谱分析</button></div><span id="displayState" class="live-pill">等待数据</span></div>
+          <div class="chart-heading"><div><h2 id="chartTitle">输入波形 <span class="channel">CH1</span></h2><p id="chartDescription">64 组 min/max · 最近一个采样块</p></div><span id="frameRate" class="mono">— Hz</span></div>
+          <div class="plot" id="plot"><canvas id="chart" aria-label="真实设备数据图表"></canvas><div id="emptyState" class="empty-state"><span>∿</span><strong id="emptyTitle">等待输入波形</strong><p id="emptyHint">连接 C5 后点击“开始分析”。</p></div><div id="cursor" class="cursor" hidden></div></div>
+          <div class="chart-footer"><span>输入：<b id="inputLabel">麦克风</b></span><span id="windowLabel">窗口 — ms</span><span id="frameLabel">采样序号 —</span></div>
+          <div class="display-toolbar"><button id="pauseButton" class="secondary" disabled>暂停显示</button><button id="singleButton" class="secondary" disabled>单次预览</button><button id="autosetButton" class="secondary" disabled>自动缩放</button><button id="resetPeakButton" class="quiet">清除峰值保持</button></div>
+          <p class="fineprint" id="previewNote">显示的是采样块包络快照。暂停与单次预览只控制页面显示，C5 继续采样。</p>
+        </article>
+        <article class="panel readings-panel"><div class="panel-title"><h2>测量读数</h2><span id="readingsState">等待电平数据</span></div><div class="metrics">
+          <div><span>RMS 电平</span><strong id="rms">—<em>dBFS</em></strong><small id="rmsHint">当前采样块</small></div>
+          <div><span>Peak 峰值</span><strong id="peak">—<em>dBFS</em></strong><small id="peakHold">保持 — dBFS</small></div>
+          <div><span>主频</span><strong id="frequency">—<em>Hz</em></strong><small id="frequencyHint">来自 C5 完整 FFT</small></div>
+          <div><span>削顶样本</span><strong id="clipped">—<em>个</em></strong><small>设备本次上电累计</small></div>
+        </div><div class="meter"><div id="levelMeter"></div></div><div class="meter-labels"><span>−80</span><span>−60</span><span>−40</span><span>−20</span><span>0 dBFS</span></div></article>
+        <article class="panel export-panel"><div><h2>保留这次测量</h2><p>导出当前显示的真实数据，附带采样位置与输入记录。</p></div><div class="button-row"><button id="csvButton" class="secondary" disabled>CSV ↓</button><button id="jsonButton" class="secondary" disabled>JSON ↓</button></div></article>
+        <details class="panel diagnostics"><summary>链路与运行诊断 <span id="throughput">— KB/s</span></summary><dl>
+          <div><dt>波形 / 频谱 / 电平</dt><dd id="rates">— Hz</dd></div><div><dt>串口占用</dt><dd id="uartLoad">—</dd></div>
+          <div><dt>C5 坏帧 / ESP 坏帧</dt><dd id="badFrames">— / —</dd></div><div><dt>采样丢块 / DAC 错误</dt><dd id="errors">— / —</dd></div>
+          <div><dt>完成采样块</dt><dd id="blocks">—</dd></div><div><dt>最重处理块</dt><dd id="worstBlock">—</dd></div>
+          <div><dt>C5 / ESP 运行时间</dt><dd id="uptimes">—</dd></div><div><dt>ESP 空闲 / 最低堆内存</dt><dd id="heap">—</dd></div>
+          <div><dt>预览合并 / C5 重启</dt><dd id="coalesced">— / —</dd></div><div><dt>收到有效帧</dt><dd id="frames">—</dd></div>
+        </dl><p>采样丢块与预览合并分别计数。图表仅保留最新预览，不影响 C5 的采样计算。</p></details>
+      </div>
+      <aside class="control-column">
+        <article class="panel"><div class="panel-title"><h2>分析控制</h2><span id="modePill" class="mode-pill">—</span></div><p>设备状态以 C5 回复和状态帧为准。</p><div class="button-row"><button id="startButton" class="primary" disabled>开始分析</button><button id="stopButton" class="secondary" disabled>停止分析</button></div><button id="queryButton" class="wide quiet" disabled>查询设备状态 ↗</button></article>
+        <article class="panel"><div class="panel-title"><h2>显示设置</h2><span>仅作用于页面</span></div><div id="scopeSettings">
+          <label>显示时基<select id="timebase"><option value="0.1">0.1 ms/div · 局部</option><option value="0.2">0.2 ms/div · 局部</option><option value="0.5">0.5 ms/div · 局部</option><option value="1">1 ms/div</option><option value="1.066667">完整采样块</option></select></label>
+          <div class="fields"><label>垂直档位<select id="vertical"><option value="0.05">0.05 FS/div</option><option value="0.1">0.1 FS/div</option><option value="0.25">0.25 FS/div</option><option value="0.5">0.5 FS/div</option><option value="1">1 FS/div</option></select></label><label>显示耦合<select id="coupling"><option value="dc">DC · 保留偏置</option><option value="ac">AC · 去快照均值</option></select></label></div>
+          <p class="fineprint">AC 为页面显示去均值，电平读数仍来自 C5。64 组包络不支持硬件触发或原始音频记录。</p></div>
+          <div id="spectrumSettings" hidden><div class="fields"><label>下限 / dBFS<select id="spectrumMin"><option value="-80">−80</option><option value="-100">−100</option><option value="-120">−120</option><option value="-140">−140</option><option value="-160">−160</option></select></label><label>上限 / dBFS<select id="spectrumMax"><option value="0">0</option><option value="-20">−20</option><option value="6">+6</option></select></label></div><p class="fineprint">对数频率轴 · 256 点峰值包络。主频由 C5 完整 FFT 提供；不从预览反算。</p></div>
+        </article>
+        <article class="panel"><div class="panel-title"><h2>输入记录</h2><span>物理跳线选择</span></div><label>当前接法<select id="input"><option value="mic">MAX4466 麦克风</option><option value="loop">DAC → ADC 电气回环</option><option value="external">外部模拟输入</option></select></label><label>增益 / 接线备注<input id="gainNote" type="text" maxlength="32" placeholder="例如：增益电位器固定在中间"></label><p class="fineprint">修改记录不会切换硬件输入。测量期间保持麦克风增益不变。</p></article>
+        <article class="panel generator"><div class="panel-title"><h2>测试信号发生器</h2><span id="generatorState">等待设备</span></div><p>DAC 正弦输出 · 默认 1 kHz / −12 dBFS</p><div class="fields"><label>频率 / Hz<input id="toneFrequency" type="number" min="20" max="20000" step="1" value="1000"></label><label>峰值 / dBFS<input id="toneLevel" type="number" min="-40" max="-6" step="1" value="-12"></label></div><div class="button-row"><button id="toneOnButton" class="secondary" disabled>应用并开启</button><button id="toneOffButton" class="quiet" disabled>关闭</button></div><p class="fineprint" id="generatorHint">等待 C5 报告支持状态。</p></article>
+        <article class="panel save-panel"><div><h2>保存工作台设置</h2><p id="saveHint">仅点击保存时写入 ESP；开机不自动开始分析。</p></div><button id="saveButton" class="wide primary" disabled>保存到设备</button></article>
+      </aside>
+    </div>
+    <footer><span>AcousticLab <b>v0.1</b> · 本地声学实验平台</span><span>真实设备数据 · 离线可用 · 预览不等于完整测量</span></footer>
+  </main>
+</div>
+<dialog id="helpDialog"><div class="dialog-heading"><h2>使用工作台</h2><button id="closeHelp" class="icon" aria-label="关闭说明">×</button></div><ol><li>连接 AcousticLab 热点，打开 192.168.4.1。两板分别用 USB 供电，只接 UART 与共地，3V3 不互连。</li><li>选择当前物理输入接法，再点“开始分析”。模式显示 RTA 后，设备开始上传电平与波形。</li><li>暂停显示会保持当前图表和读数；“单次预览”捕获下一份图表数据。C5 继续采样。</li><li>调整显示设置或输入记录后，点击“保存到设备”保留设置。测试音不会在开机或重连后自动开启。</li><li>CSV / JSON 导出当前显示快照。波形是 512 样本的 64 组包络，频谱是 256 点预览；两者均不等同于原始音频或完整频谱。</li></ol><p>当前 C5 未实现 FFT 或测试音时，相应图表和输出控制会显示支持状态。THD、扫频、衰减、瀑布图与完整频谱导出属于后续版本。</p></dialog>
+</body></html>
