@@ -9,6 +9,8 @@
   const counts={2:0,3:0,4:0}, rates={2:0,3:0,4:0}; let rateAt=performance.now();
   const inputNames={mic:'MAX4466 麦克风',loop:'DAC → ADC 回环',external:'外部模拟输入'};
   const format=(n,d=1)=>Number.isFinite(n) ? n.toLocaleString('zh-CN',{maximumFractionDigits:d,minimumFractionDigits:d}) : '—';
+  const modeName=s=>({0:'IDLE',1:'RTA',2:'THD',3:'SWEEP'})[s?.mode]||'—';
+  const advanced=AcousticAdvanced.create({context:()=>({status,config,saved,paused,online:!!online(),locked:!connected||busy||!!pending,storage,info}),request,download,notice});
   const online=()=>connected && status && performance.now()-statusAt<3000 && performance.now()-espAt<3500;
   const fresh=f=>f && performance.now()-f.at<1500;
   function notice(text,tone='') { $('notice').textContent=text; $('notice').className='notice '+tone; }
@@ -27,18 +29,18 @@
     $('cursor').hidden=true; dirty=true; update();
   }
   function update() {
-    const alive=online(), running=alive && status.mode===1, selected=config.view==='scope' ? shown.wave : shown.spectrum;
+    const alive=online(), running=alive && status.mode>0, selected=config.view==='scope' ? shown.wave : shown.spectrum;
     $('inputLabel').textContent=inputNames[selected?.input || config.input]+(selected && selected.input!==config.input ? ' · 快照接法' : '');
     $('connectionDot').className='dot '+(alive ? 'online' : connected ? '' : 'offline');
     $('connectionLabel').textContent=alive ? 'ESP · C5 已连接' : connected ? 'ESP 已连 · C5 离线' : 'ESP 断开 · 重连中';
-    $('deviceState').textContent=alive ? (running ? 'RTA · 分析中' : 'IDLE · 就绪') : 'C5 离线';
+    $('deviceState').textContent=alive ? (running ? modeName(status)+' · 分析中' : 'IDLE · 就绪') : 'C5 离线';
     $('deviceDetail').textContent=alive ? (status.audioRunning ? '采样与 DAC DMA 已启动' : '音频外设未启动') : (status ? '保留最后状态，等待新数据' : '请检查 C5 供电与串口接线');
-    $('modePill').textContent=alive ? (running ? 'RTA' : 'IDLE') : '离线'; $('modePill').className='mode-pill'+(running?' running':'');
+    $('modePill').textContent=alive ? modeName(status) : '离线'; $('modePill').className='mode-pill'+(running?' running':'');
     metric('sampleRate',status ? format(status.sampleRate,0) : '—','Hz');
     $('fftLength').textContent=status ? (status.fftLength ? format(status.fftLength,0)+' 点' : '未启用') : '—';
     $('fftDetail').textContent=status?.fftLength ? 'Hann 窗 · C5 完整 FFT' : '当前 C5 尚未提供 FFT';
     const lock=!connected || busy || !!pending;
-    $('startButton').disabled=lock || !alive || running; $('stopButton').disabled=lock || !alive || !running;
+    $('startButton').disabled=lock || !alive || running || !advanced.canMeasure(); $('stopButton').disabled=lock || !alive || !running;
     $('queryButton').disabled=lock; $('saveButton').disabled=lock || !storage;
     $('pauseButton').disabled=!selected && !running;
     $('pauseButton').textContent=paused || single ? '恢复实时显示' : '暂停显示';
@@ -80,7 +82,7 @@
     $('resetReason').textContent=({1:'上电',3:'软件复位',4:'异常崩溃',5:'中断看门狗',6:'任务看门狗',7:'其他看门狗',9:'供电欠压'})[stats.resetReason] || (stats.resetReason===undefined?'—':String(stats.resetReason));
     $('maxLoop').textContent=Number.isFinite(stats.maxLoopUs)?format(stats.maxLoopUs/1000,2)+' ms':'—';
     $('stackFree').textContent=Number.isFinite(stats.stackFree)?format(stats.stackFree,0)+' B':'—';
-    dirty=true;
+    advanced.update(); dirty=true;
   }
   function duration(ms) { if(!Number.isFinite(ms)) return '—'; const s=Math.floor(ms/1000); return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m '+s%60+'s'; }
   function capture() { shown={...latest,hold}; update(); }
@@ -90,7 +92,7 @@
     f.input=config.input; f.gainNote=config.gainNote;
     if(f.type===1) {
       const reboot=status && ((f.uptime-status.uptime)|0)<0;
-      if(reboot) { latest={}; shown={}; hold=-Infinity; paused=false; single=false; notice('C5 已重新启动，旧预览已清除。',''); }
+      if(reboot) { latest={}; shown={}; hold=-Infinity; paused=false; single=false; advanced.reset(); notice('C5 已重新启动，旧预览已清除。',''); }
       if(status && status.mode!==f.mode) {
         latest={}; hold=-Infinity;
         if(f.mode===1 && !paused) shown={};
@@ -98,13 +100,15 @@
       status=f; statusAt=f.at;
       if(!f.fftLength) { delete latest.spectrum; delete shown.spectrum; }
       if(!f.mode) { single=false; latest={}; }
-      update(); return;
+      advanced.status(f); update(); return;
     }
+    if(f.type===5 || f.type===6) { advanced.frame(f); return; }
     if(f.type===8) return; // Command correlation is performed by the ESP.
     if(!status || !status.mode) return;
     const key={2:'level',3:'spectrum',4:'wave'}[f.type];
     if(f.type===3 && (f.fftLength!==status.fftLength || f.sampleRate!==status.sampleRate)) return;
     f.sampleRate=f.sampleRate || status.sampleRate;
+    advanced.frame(f);
     counts[f.type]++;
     latest[key]=f;
     if(f.type===2) hold=Math.max(hold,f.peak);
@@ -112,36 +116,38 @@
       if(key===(config.view==='scope'?'wave':'spectrum')) { single=false; paused=true; capture(); notice('单次预览已捕获，显示保持；设备继续采样。','success'); }
     } else if(!paused) capture();
   }
-  const messages={reply_timeout:'未收到 C5 回复。检查 GPIO17 → PA3、共地与 C5 接收端。',status_timeout:'C5 已回复，但未收到目标状态。请查询设备状态。',busy:'上一条设备命令尚未完成。',device_offline:'C5 已离线，请检查供电与串口。',unsupported:'当前 C5 不支持此功能。',invalid_config:'设置超出允许范围，未保存。',invalid_request:'参数无效，请检查输入。',storage_failed:'ESP 配置保存失败。',uart_write_failed:'串口发送失败。',device_restarted:'命令期间 C5 重新启动，请重新查询状态。'};
+  const messages={requires_idle:'请先停止分析，等待 IDLE。',invalid_calibration:'校准 JSON 或频点无效。',calibration_path_mismatch:'请先保存与校准表匹配的输入路径和增益备注。',dataset_mismatch:'完整数据集元信息不一致，已取消。',dataset_conflict:'完整数据集重复块冲突，已取消。',reply_timeout:'未收到 C5 回复。检查 GPIO17 → PA3、共地与 C5 接收端。',status_timeout:'C5 已回复，但未收到目标状态。请查询设备状态。',busy:'上一条设备命令尚未完成。',device_offline:'C5 已离线，请检查供电与串口。',unsupported:'当前 C5 不支持此功能。',invalid_config:'设置超出允许范围，未保存。',invalid_request:'参数无效，请检查输入。',storage_failed:'ESP 配置保存失败。',uart_write_failed:'串口发送失败。',device_restarted:'命令期间 C5 重新启动，请重新查询状态。'};
   function jsonMessage(data) {
     let m; try { m=JSON.parse(data); } catch { return; }
-    espAt=performance.now();
+    espAt=performance.now(); advanced.json(m);
     if(m.event==='hello') {
       info=m; storage=!!m.storage; busy=!!m.busy;
       $('version').textContent='v'+m.version; $('ssid').textContent=m.ssid || 'AcousticLab';
       if(!loaded) { config={...defaults,...m.config}; saved={...config}; loaded=true; syncConfig(); }
       needsStatus=true;
     } else if(m.event==='stats') { stats=m; busy=!!m.busy; }
-    else if(m.event==='device_restarted') { latest={}; shown={}; hold=-Infinity; single=false; paused=false; }
+    else if(m.event==='device_restarted') { advanced.reset(); latest={}; shown={}; hold=-Infinity; single=false; paused=false; }
     else if(pending && m.id===pending.id) {
       if(m.event==='sent') { pending.seq=m.seq; notice('命令已发送，等待 C5 回复…'); }
       if(m.event==='ack') notice('C5 已接收命令，等待状态确认…');
-      if(m.event==='result' || m.event==='error' || m.event==='saved') {
+      if(m.event==='result' || m.event==='error' || m.event==='saved' || m.event==='cal_profile') {
         const action=pending.action, savedSnapshot=pending.configSnapshot; clearTimeout(pending.timer); pending=null; busy=false;
-        if(m.event==='saved') { saved={...savedSnapshot}; syncConfig(); notice('工作台设置已保存到 ESP。','success'); }
-        else if(m.event==='result' && m.result===0) notice(action==='status' ? '状态查询成功。' : action==='rta' ? 'C5 已进入 RTA，等待实时数据。' : action==='idle' ? 'C5 已进入 IDLE，停止上传分析预览。' : '测试音设置已由 C5 确认。','success');
-        else notice(m.message==='rejected' ? ['','C5 拒绝：命令长度错误。','C5 拒绝：参数错误。','C5 尚未支持该命令。'][m.result] || 'C5 拒绝了命令。' : messages[m.message] || '请求未完成，请查询状态。','error');
+        if(m.event==='cal_profile') notice('校准表已读取/保存。','success');
+        else if(m.event==='saved') { saved={...savedSnapshot}; syncConfig(); notice('工作台设置已保存到 ESP。','success'); }
+        else if(m.event==='result' && m.result===0) notice(action==='status' ? '状态查询成功。' : action==='rta' ? 'C5 已进入 RTA，等待实时数据。' : action==='idle' ? 'C5 已进入 IDLE，停止上传分析预览。' : ['analysis','thd','sweep','full','cal_apply','cal_clear'].includes(action) ? 'C5 已确认测量请求。' : '测试音设置已由 C5 确认。','success');
+        else notice(m.message==='rejected' ? ['','C5 拒绝：命令长度错误。','C5 拒绝：参数错误。','C5 尚未支持该命令。','C5 正忙，请先停止测量或等待导出完成。','C5 尚无可用结果，请等待 FFT。'][m.result] || 'C5 拒绝了命令。' : messages[m.message] || '请求未完成，请查询状态。','error');
       }
     }
     if(needsStatus && !busy && !pending && connected) { needsStatus=false; request('status',{},true); }
     update();
   }
   function request(action,fields={},automatic=false) {
-    if(!connected || socket.readyState!==WebSocket.OPEN || pending || busy) return;
+    if(!connected || socket.readyState!==WebSocket.OPEN || pending || busy) return false;
     const id=++requestId;
-    pending={id,action,configSnapshot:action==='save'?{...config}:null,timer:setTimeout(()=>{ if(pending?.id!==id) return; pending=null; notice('请求超时。请查询状态确认设备当前运行情况。','error'); update(); },3500)};
+    pending={id,action,configSnapshot:action==='save'?{...config}:null,timer:setTimeout(()=>{ if(pending?.id!==id) return; pending=null; notice('请求超时。请查询状态确认设备当前运行情况。','error'); update(); },action==='cal_apply'?90000:action==='full'?7000:3500)};
+    advanced.started(action,id);
     socket.send(JSON.stringify({action,id,...fields}));
-    if(!automatic) notice(action==='save'?'正在保存工作台设置…':'等待设备确认…'); update();
+    if(!automatic) notice(action==='save'?'正在保存工作台设置…':'等待设备确认…'); update(); return true;
   }
   function connect() {
     clearTimeout(reconnectTimer);
@@ -154,7 +160,7 @@
       connected=false; busy=false;
       if(pending) { clearTimeout(pending.timer); pending=null; notice('连接已断开，命令结果未知。重连后会查询实际状态。','error'); }
       else notice('ESP 连接已断开，正在重连。最后显示的快照已保留。');
-      single=false; update(); reconnectTimer=setTimeout(connect,retry); retry=Math.min(8000,retry*2);
+      advanced.disconnected(); single=false; update(); reconnectTimer=setTimeout(connect,retry); retry=Math.min(8000,retry*2);
     };
   }
   function waveValues(wave) {
@@ -204,6 +210,7 @@
       if(points.length) { ctx.lineTo(x(points[points.length-1].hz),bottom);ctx.lineTo(x(points[0].hz),bottom);ctx.closePath();const g=ctx.createLinearGradient(0,top,0,bottom);g.addColorStop(0,'#e9c78130');g.addColorStop(1,'#e9c78100');ctx.fillStyle=g;ctx.fill(); }
       if(shown.level?.flags&1) { const hz=shown.level.frequency;if(hz>=freqMin && hz<=freqMax) { ctx.setLineDash([3,4]);ctx.strokeStyle='#74c7b5';ctx.beginPath();ctx.moveTo(x(hz),top);ctx.lineTo(x(hz),bottom);ctx.stroke(); } }
     }
+    if(!scope) advanced.markers(ctx,plotGeometry);
     ctx.restore();
   }
   function autoset() {
@@ -233,7 +240,7 @@
     const el=$('cursor');el.textContent=text;el.hidden=false;el.style.left=Math.min(g.w-155,Math.max(8,px+12))+'px';el.style.top='25px';
   }
   function snapshot() {
-    return {schema:'acousticlab.preview.v1',source:'c5_uart_crc16',exportedAt:new Date().toISOString(),firmware:info.version||'unknown',device:info.ssid||'unknown',connection:online()?'online':'offline',display:paused?'paused':status?.mode===1?'live':'idle_snapshot',config:{...config},calibration:{state:'uncalibrated',units:'dBFS'},status,stats,frames:{level:shown.level||null,waveform:shown.wave||null,spectrum:shown.spectrum||null},peakHold:Number.isFinite(shown.hold)?shown.hold:null,note:'Preview snapshots; frames retain individual sequence/sample positions. Waveform is min/max envelope, spectrum is 256 peak bins. Not PCM or full FFT.'};
+    return {schema:'acousticlab.preview.v1',source:'c5_uart_crc16',exportedAt:new Date().toISOString(),firmware:info.version||'unknown',device:info.ssid||'unknown',connection:online()?'online':'offline',display:paused?'paused':status?.mode===1?'live':'idle_snapshot',config:{...config},calibration:advanced.calibrationInfo(),status,stats,frames:{level:shown.level||null,waveform:shown.wave||null,spectrum:shown.spectrum||null},peakHold:Number.isFinite(shown.hold)?shown.hold:null,measurements:advanced.snapshot(),note:'Preview snapshots; frames retain individual sequence/sample positions. Waveform is min/max envelope, spectrum is 256 peak bins. Not PCM or full FFT.'};
   }
   function download(text,mime,ext) {
     const url=URL.createObjectURL(new Blob([ext==='csv'?'\ufeff':'',text],{type:mime}));const link=document.createElement('a');link.href=url;link.download='AcousticLab-'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -250,7 +257,7 @@
   }
   $('scopeTab').onclick=()=>{config.view='scope';single=false;syncConfig();};$('spectrumTab').onclick=()=>{config.view='spectrum';single=false;syncConfig();};
   $('startButton').onclick=()=>request('rta');$('stopButton').onclick=()=>request('idle');$('queryButton').onclick=()=>request('status');
-  $('pauseButton').onclick=()=>{paused=!paused;single=false;if(!paused)capture();else update();};
+  $('pauseButton').onclick=()=>{paused=!paused;single=false;advanced.pause(paused);if(!paused)capture();else update();};
   $('singleButton').onclick=()=>{single=true;paused=true;update();notice('等待下一份'+(config.view==='scope'?'波形':'频谱')+'预览；设备继续采样。');};
   $('autosetButton').onclick=autoset;$('resetPeakButton').onclick=()=>{hold=latest.level?.peak??-Infinity;shown.hold=hold;update();};
   $('saveButton').onclick=()=>{if(!validateInputs()) return; request('save',{config});};

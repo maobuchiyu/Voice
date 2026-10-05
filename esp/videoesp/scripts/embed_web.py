@@ -9,6 +9,7 @@ generated.mkdir(parents=True, exist_ok=True)
 assets = [("index.html", "text/html; charset=utf-8"),
           ("styles.css", "text/css; charset=utf-8"),
           ("protocol.js", "application/javascript; charset=utf-8"),
+          ("advanced.js", "application/javascript; charset=utf-8"),
           ("app.js", "application/javascript; charset=utf-8")]
 parts = ["#pragma once\n#include <Arduino.h>\n"]
 for index, (name, mime) in enumerate(assets):

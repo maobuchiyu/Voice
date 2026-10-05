@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101715"><title>AcousticLab · 声学测量工作台</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23b8d88a'/%3E%3Cpath d='M4 17c6-20 10 18 15 0s7-6 9-3' fill='none' stroke='%23101715' stroke-width='3'/%3E%3C/svg%3E"><link rel="stylesheet" href="/styles.css"><script defer src="/protocol.js"></script><script defer src="/app.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101715"><title>AcousticLab · 声学测量工作台</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23b8d88a'/%3E%3Cpath d='M4 17c6-20 10 18 15 0s7-6 9-3' fill='none' stroke='%23101715' stroke-width='3'/%3E%3C/svg%3E"><link rel="stylesheet" href="/styles.css"><script defer src="/protocol.js"></script><script defer src="/advanced.js"></script><script defer src="/app.js"></script></head>
 <body>
 <div class="shell">
-  <header class="topbar"><a href="/" class="brand"><span class="brand-icon">∿</span>Acoustic<span>Lab</span></a><div class="brand-context">声学测量工作台 <small id="version">v0.1</small></div><div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionLabel">正在连接 ESP</span><button id="helpButton" class="icon" aria-label="使用说明">?</button></div></header>
+  <header class="topbar"><a href="/" class="brand"><span class="brand-icon">∿</span>Acoustic<span>Lab</span></a><div class="brand-context">声学测量工作台 <small id="version">v0.3</small></div><div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionLabel">正在连接 ESP</span><button id="helpButton" class="icon" aria-label="使用说明">?</button></div></header>
   <main>
     <div class="page-intro"><div><span class="eyebrow">LIVE MEASUREMENT</span><h1>让声音变得可见。</h1><p>实时观察输入波形与电平，记录每一次测量。</p></div><span class="device-tag" id="ssid">ESP32-S3 · STM32C5</span></div>
     <section class="status-grid" aria-label="设备状态">
@@ -12,6 +12,7 @@
       <article class="status-card"><span class="eyebrow">FFT 长度</span><strong id="fftLength">—</strong><small id="fftDetail">等待设备状态</small></article>
       <article class="status-card"><span class="eyebrow">测量基准</span><strong>相对 dBFS</strong><small>未做声学校准 · 不代表 dB SPL</small></article>
     </section>
+    <nav class="measurement-nav" aria-label="测量面板"><a href="#chart">实时图</a><a href="#harmonicPanel">谐波 / THD</a><a href="#sweepPanel">扫频</a><a href="#waterfallPanel">瀑布图</a><a href="#advancedControls">测量控制</a><a href="#calibrationPanel">校准</a></nav>
     <div class="notice" id="notice" role="status" aria-live="polite">等待设备连接。页面打开后不会自动开始分析或开启测试音。</div>
     <div class="workspace">
       <div class="visual-column">
@@ -23,6 +24,19 @@
           <div class="display-toolbar"><button id="pauseButton" class="secondary" disabled>暂停显示</button><button id="singleButton" class="secondary" disabled>单次预览</button><button id="autosetButton" class="secondary" disabled>自动缩放</button><button id="resetPeakButton" class="quiet">清除峰值保持</button></div>
           <p class="fineprint" id="previewNote">显示的是采样块包络快照。暂停与单次预览只控制页面显示，C5 继续采样。</p>
         </article>
+
+        <article class="panel harmonic-panel" id="harmonicPanel">
+          <div class="panel-title"><h2>H1–H5 · 谐波与 THD</h2><span id="harmonicState">等待能力报告</span></div>
+          <p id="harmonicHint">测量来自 C5 同步检波，不能从 256 点预览反算。默认累计 0.5 秒。</p>
+          <div class="metrics"><div><span>总 THD · H2–H5</span><strong id="thdPercent">—<em>%</em></strong></div><div><span>THD 电平</span><strong id="thdDb">—<em>dB</em></strong></div><div><span>基波</span><strong id="harmonicFundamental">—<em>Hz</em></strong></div><div><span>独立测量窗口</span><strong id="harmonicDuration">—<em>ms</em></strong></div></div>
+          <div class="table-scroll"><table><thead><tr><th>阶次</th><th>频率 / Hz</th><th>幅度 / FS 峰值</th><th>dBFS</th><th>dBc</th><th>幅度比 / %</th></tr></thead><tbody id="harmonicRows"></tbody></table></div>
+          <p id="harmonicIdentity" class="fineprint">尚无测量结果。THD 不含噪声，不是 THD+N。</p>
+          <div class="button-row"><button id="harmonicCsv" disabled>谐波 CSV ↓</button><button id="harmonicJson" disabled>结果 JSON ↓</button></div>
+        </article>
+        <article class="panel" id="sweepPanel"><div class="panel-title"><h2>逐点扫频 · 幅度与相位</h2><span id="sweepState">等待能力报告</span></div><p>20 Hz–20 kHz · 121 点。幅相由 C5 同步检波；绿色为增益，黄色为相位。</p><progress id="sweepProgress" max="121" value="0"></progress><div class="response-plot"><canvas id="sweepChart" aria-label="扫频增益和相位"></canvas></div><p id="sweepIdentity" class="fineprint">尚无点扫结果</p><div class="fields"><label>显示曲线<select id="sweepCurve"><option value="raw">原始结果</option><option value="corrected">C5 校准后结果</option></select></label></div><div class="button-row"><button id="sweepCsv" disabled>点扫 CSV ↓</button><button id="sweepJson" disabled>点扫 JSON ↓</button><button id="captureCalibration" disabled>保存为回环校准</button></div></article>
+        <article class="panel"><div class="panel-title"><h2>相对加权电平与频带</h2><span id="bandsState">等待 C5 结果</span></div><div class="metrics"><div><span>相对 A</span><strong id="weightedA">—<em>dBFS</em></strong></div><div><span>相对 C</span><strong id="weightedC">—<em>dBFS</em></strong></div><div><span>相对 Z</span><strong id="weightedZ">—<em>dBFS</em></strong></div></div><div class="table-scroll"><table><thead><tr><th>中心频率 / Hz</th><th>频带电平 / dBFS</th></tr></thead><tbody id="bandRows"></tbody></table></div><p class="fineprint">C5 使用完整频谱功率计算；未经 SPL 校准，不代表绝对声压。</p></article>
+        <details class="panel" id="waterfallPanel"><summary>频谱瀑布图 · 最近 30 秒</summary><p>浏览器只记录收到的频谱预览；空档表示没有收到数据。</p><div class="response-plot"><canvas id="waterfallChart" aria-label="30 秒频谱历史"></canvas></div><button id="clearHistory" class="quiet">清空历史</button></details>
+        <article class="panel"><div class="panel-title"><h2>完整频谱快照</h2><span id="fullState">等待能力报告</span></div><p>包含 DC 至 Nyquist 的 N/2+1 点。只允许导出已收到全部分块的数据集。</p><div class="button-row"><button id="fullRequest" disabled>请求完整频谱</button><button id="fullCsv" disabled>完整 CSV ↓</button><button id="fullJson" disabled>完整 JSON ↓</button></div><p class="fineprint" id="fullIdentity">尚无完整数据集</p></article>
         <article class="panel readings-panel"><div class="panel-title"><h2>测量读数</h2><span id="readingsState">等待电平数据</span></div><div class="metrics">
           <div><span>RMS 电平</span><strong id="rms">—<em>dBFS</em></strong><small id="rmsHint">当前采样块</small></div>
           <div><span>Peak 峰值</span><strong id="peak">—<em>dBFS</em></strong><small id="peakHold">保持 — dBFS</small></div>
@@ -50,11 +64,14 @@
         </article>
         <article class="panel"><div class="panel-title"><h2>输入记录</h2><span>物理跳线选择</span></div><label>当前接法<select id="input"><option value="mic">MAX4466 麦克风</option><option value="loop">DAC → ADC 电气回环</option><option value="external">外部模拟输入</option></select></label><label>增益 / 接线备注<input id="gainNote" type="text" maxlength="32" placeholder="例如：增益电位器固定在中间"></label><p class="fineprint">修改记录不会切换硬件输入。测量期间保持麦克风增益不变。</p></article>
         <article class="panel generator"><div class="panel-title"><h2>测试信号发生器</h2><span id="generatorState">等待设备</span></div><p>DAC 正弦输出 · 默认 1 kHz / −12 dBFS</p><div class="fields"><label>频率 / Hz<input id="toneFrequency" type="number" min="20" max="20000" step="1" value="1000"></label><label>峰值 / dBFS<input id="toneLevel" type="number" min="-40" max="-6" step="1" value="-12"></label></div><div class="button-row"><button id="toneOnButton" class="secondary" disabled>应用并开启</button><button id="toneOffButton" class="quiet" disabled>关闭</button></div><p class="fineprint" id="generatorHint">等待 C5 报告支持状态。</p></article>
+
+        <article class="panel advanced-controls" id="advancedControls"><div class="panel-title"><h2>v0.3 测量控制</h2><span id="advancedCapability">等待 C5</span></div><label>THD 基波 / Hz<input id="thdFrequency" type="number" min="100" max="4000" step="1" value="1000"></label><label>输出峰值 / dBFS<input id="measurementLevel" type="number" min="-40" max="-6" step="1" value="-12"></label><div class="button-row"><button id="thdStart" disabled>开始 THD</button><button id="thdStop" disabled>停止测量</button></div><div class="button-row"><button id="sweepStart" disabled>开始 121 点扫频</button><button id="sweepStop" disabled>停止扫频</button></div><p class="fineprint">测量模式由 C5 确认。先做电气回环；连接音箱后再做声学扫频。改变参数后等待稳定累计。</p><label>FFT 点数<select id="analysisFft"><option value="2048">2048</option><option value="4096">4096</option></select></label><p class="fineprint">C5 固定 0.3 秒功率平均；频带和相对 A/C/Z 随 RTA 自动发送。</p><button id="analysisApply" class="wide" disabled>设置 FFT 点数</button></article>
+        <article class="panel calibration-panel" id="calibrationPanel"><div class="panel-title"><h2>路径校准</h2><span id="calibrationState">未校准</span></div><label>已保存路径<select id="calibrationKind"><option value="loop">电气回环</option><option value="mic">麦克风频响</option></select></label><p id="calibrationIdentity">尚未保存校准表</p><label>导入校准 JSON<input id="calibrationFile" type="file" accept=".json,application/json"></label><p id="calibrationImportHint" class="fineprint">2–121 个递增频点；需注明来源、路径和增益。更换模拟增益后不得沿用旧表。</p><div class="button-row"><button id="calibrationSave" disabled>显式保存</button><button id="calibrationExport" disabled>导出表</button></div><div class="button-row"><button id="calibrationApply" disabled>加载到 C5</button><button id="calibrationClear" disabled>清除当前应用</button></div><p class="fineprint">加载仅限 IDLE，需先保存匹配的输入/增益记录。存储和加载分开；不会开机自动加载。SPL 单点校准属于 v0.4。</p></article>
         <article class="panel save-panel"><div><h2>保存工作台设置</h2><p id="saveHint">仅点击保存时写入 ESP；开机不自动开始分析。</p></div><button id="saveButton" class="wide primary" disabled>保存到设备</button></article>
       </aside>
     </div>
-    <footer><span>AcousticLab <b>v0.1</b> · 本地声学实验平台</span><span>真实设备数据 · 离线可用 · 预览不等于完整测量</span></footer>
+    <footer><span>AcousticLab <b>v0.3</b> · 本地声学实验平台</span><span>真实设备数据 · 离线可用 · 预览不等于完整测量</span></footer>
   </main>
 </div>
-<dialog id="helpDialog"><div class="dialog-heading"><h2>使用工作台</h2><button id="closeHelp" class="icon" aria-label="关闭说明">×</button></div><ol><li>连接 AcousticLab 热点，打开 192.168.4.1。两板分别用 USB 供电，只接 UART 与共地，3V3 不互连。</li><li>选择当前物理输入接法，再点“开始分析”。模式显示 RTA 后，设备开始上传电平与波形。</li><li>暂停显示会保持当前图表和读数；“单次预览”捕获下一份图表数据。C5 继续采样。</li><li>调整显示设置或输入记录后，点击“保存到设备”保留设置。测试音不会在开机或重连后自动开启。</li><li>CSV / JSON 导出当前显示快照。波形是 512 样本的 64 组包络，频谱是 256 点预览；两者均不等同于原始音频或完整频谱。</li></ol><p>当前 C5 未实现 FFT 或测试音时，相应图表和输出控制会显示支持状态。THD、扫频、衰减、瀑布图与完整频谱导出属于后续版本。</p></dialog>
+<dialog id="helpDialog"><div class="dialog-heading"><h2>使用工作台</h2><button id="closeHelp" class="icon" aria-label="关闭说明">×</button></div><ol><li>连接 AcousticLab 热点，打开 192.168.4.1。两板分别用 USB 供电，只接 UART 与共地，3V3 不互连。</li><li>选择当前物理输入接法，再点“开始分析”。模式显示 RTA 后，设备开始上传电平与波形。</li><li>暂停显示会保持当前图表和读数；“单次预览”捕获下一份图表数据。C5 继续采样。</li><li>调整显示设置或输入记录后，点击“保存到设备”保留设置。测试音不会在开机或重连后自动开启。</li><li>CSV / JSON 导出当前显示快照。波形是 512 样本的 64 组包络，频谱是 256 点预览；两者均不等同于原始音频或完整频谱。</li></ol><p>当前 C5 未实现 FFT 或测试音时，相应图表和输出控制会显示支持状态。谐波、扫频、完整频谱和校准需要 C5 对应 v0.3 能力。瀑布图可使用现有频谱；衰减和 SPL 属于后续版本。</p></dialog>
 </body></html>

@@ -8,6 +8,8 @@ namespace Protocol {
 constexpr size_t capacity = 1024;
 constexpr uint16_t generatorSupported = 0x0100;
 constexpr uint16_t generatorActive = 0x0200;
+constexpr uint16_t harmonicsSupported=4, sweepSupported=8, fullSupported=2, calibrationSupported=16, analysisSupported=1;
+inline bool finiteRange(float v,float lo,float hi) { return isfinite(v) && v>=lo && v<=hi; }
 inline uint16_t u16(const uint8_t* p) { return uint16_t(p[0]) | uint16_t(p[1]) << 8; }
 inline uint32_t u32(const uint8_t* p) {
   return uint32_t(p[0]) | uint32_t(p[1]) << 8 | uint32_t(p[2]) << 16 | uint32_t(p[3]) << 24;
@@ -30,7 +32,7 @@ inline bool validPayload(const uint8_t* f) {
   const uint8_t* p=f+12; const uint16_t n=u16(f+6);
   switch(f[3]) {
     case 1:
-      return (n==32 || n==40) && p[0]<=1 && p[1]<=1 && u32(p+4)>0 && u32(p+4)<=192000 &&
+      return (n==32 || n==40) && p[0]<=3 && p[1]<=1 && u32(p+4)>0 && u32(p+4)<=192000 &&
         (u16(p+8)==0 || u16(p+8)==2048 || u16(p+8)==4096) &&
         (!(u16(p+2)&generatorSupported) || (n==40 && u32(p+32)>=20 && u32(p+32)<=20000 &&
           int16_t(u16(p+36))>=-4000 && int16_t(u16(p+36))<=-600));
@@ -47,7 +49,33 @@ inline bool validPayload(const uint8_t* f) {
         if(lo < -2048 || hi>2047 || lo>hi) return false;
       }
       return true;
-    case 8: return n==4 && p[1]<=3 && p[2]<=1;
+    case 5: {
+      if(n<2 || p[0]!=1) return false;
+      if(p[1]==3) return n==28 && u16(p+2)==0x0300 &&
+        (u16(p+8)==2048 || u16(p+8)==4096) && p[10]<=3 && p[11]>=1 && p[11]<=2 &&
+        p[20]<=1 && p[21]<=1 && p[22]<=1 && p[23]<=1;
+      if(p[1]==4) {
+        if(n!=56 || p[2]>1 || p[3] || u16(p+18)!=8 || (u16(p+16)&~255)) return false;
+        for(unsigned i=0;i<3;++i) if(!finiteRange(f32(p+4+4*i),-200,20)) return false;
+        for(unsigned i=0;i<8;++i) if(!finiteRange(f32(p+20+4*i),-200,20)) return false;
+        return finiteRange(f32(p+52),0,220);
+      }
+      if(n!=204 || (p[1]!=1 && p[1]!=2) || (u16(p+2)&~63) || p[20]>31 ||
+         p[21]<1 || p[21]>2 || p[22] || p[23] || !u32(p+8) ||
+         u16(p+18)!=(p[1]==1?1:121) || u16(p+16)>=u16(p+18) ||
+         !finiteRange(f32(p+24),p[1]==1?100:20,p[1]==1?4000:20000)) return false;
+      for(unsigned i=28;i<204;i+=4) if(!isfinite(f32(p+i))) return false;
+      return true;
+    }
+    case 6: {
+      if(n<24 || !u32(p) || p[4]!=1 || p[5]!=1 ||
+         (u16(p+6)!=2048 && u16(p+6)!=4096) || !u32(p+8) || u32(p+8)>192000 ||
+         u16(p+12)!=u16(p+6)/2+1 || !u16(p+16) || u16(p+16)>236 ||
+         u16(p+14)+u16(p+16)>u16(p+12) || n!=22+2*u16(p+16)) return false;
+      for(unsigned i=0;i<u16(p+16);++i) if(int16_t(u16(p+22+i*2))<-20000 || int16_t(u16(p+22+i*2))>2000) return false;
+      return true;
+    }
+    case 8: return n==4 && p[1]<=5 && p[2]<=3;
     default: return false;
   }
 }

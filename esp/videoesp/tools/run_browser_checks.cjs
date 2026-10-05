@@ -8,8 +8,8 @@ const {chromium}=require(process.argv[2]||'playwright');
   page.on('console',m=>{if(m.type()==='error')console.error('Browser console:',m.text());});
   try{
     await page.goto('http://127.0.0.1:8080/');
-    const code=fs.readFileSync(path.join(__dirname,'browser_checks.js'),'utf8');
-    const result=await (new Function('return '+code)())(page);
+    const code=fs.readFileSync(path.join(__dirname,process.argv[3]||'browser_checks.js'),'utf8');
+    const result=await (new Function('require','return '+code)(require))(page);
     console.log(JSON.stringify(result,null,2));
   } catch(error) {
     console.error(error.stack);

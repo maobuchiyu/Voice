@@ -1,0 +1,35 @@
+{
+  "version": "0.3.0",
+  "date": "2026-10-05",
+  "board": "ESP32-S3 N16R8",
+  "ramBytes": 80944,
+  "flashBytes": 807481,
+  "hardwareUploaded": false,
+  "c5BaselineCommit": "011b7ec",
+  "files": {
+    "firmware.bin": {
+      "size": 807840,
+      "sha256": "a1a72063346eae6058b0c926fdf1df8f89ff2ebb5dd344ed093e064064452b63"
+    },
+    "firmware.elf": {
+      "size": 13268836,
+      "sha256": "30eb2203f1b9885829088641218a74c79c76ee344799af514dca1244c20955fb"
+    },
+    "bootloader.bin": {
+      "size": 15104,
+      "sha256": "2a71d69b471e20c2bac7fb469f3c6a807b3ebee780e348e5889db0da849ca363"
+    },
+    "partitions.bin": {
+      "size": 3072,
+      "sha256": "bd0f7954aca2ef7d925ee21aaa1f3dc8822d1d6ce5cbbd26a135e5886bfff6ce"
+    },
+    "boot_app0.bin": {
+      "size": 8192,
+      "sha256": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0"
+    },
+    "source.zip": {
+      "size": 1004351,
+      "sha256": "16ffc54bbdd1ec69fe989f0f504d4cc6d8049d8be171da290f21659f51c88eae"
+    }
+  }
+}

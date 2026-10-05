@@ -1,9 +1,9 @@
 # AcousticLab 声学测量平台完整项目计划
 
-> 版本：修订版 11
+> 版本：修订版 12
 > 更新日期：2026-10-05
 > 硬件：STM32C532CC + ESP32-S3 N16R8 + MAX4466 模拟麦克风
-> 状态：C5 v0.3.0 软件功能、构建及数值/协议测试完成；v0.3实物精度、耗时、校准重复性与长期稳定性待验收。ESP与网页的交付及联合验收分别记录。
+> 状态：C5 v0.3.0 软件功能、构建及数值/协议测试完成；v0.3实物精度、耗时、校准重复性与长期稳定性待验收。ESP v0.3.0网页/桥接及软件检查也已完成；两板v0.3烧录与联合实物验收待做。
 
 ## 1. 项目目标与已确定的方案
 
@@ -58,9 +58,9 @@
 
 完整规划全部阶段，但每个阶段都独立可运行、可验收，不等待所有高级功能完成后才交付。
 
-### 1.4 当前实施进度（2026-10-01）
+### 1.4 当前实施进度（2026-10-05）
 
-真机网页源码位于 [`esp/videoesp/web/index.html`](esp/videoesp/web/index.html)，随 ESP v0.1.0 固件嵌入，连接热点后通过 `http://192.168.4.1/` 访问；构建和操作见 [ESP 使用说明](esp/videoesp/README.md)。当前已上传 v0.1.1 修复版，手机刷新及完整真机验收待确认。
+真机网页源码位于 [`esp/videoesp/web/index.html`](esp/videoesp/web/index.html)，随 ESP v0.3.0 固件嵌入，连接热点后通过 `http://192.168.4.1/` 访问；构建和操作见 [ESP 使用说明](esp/videoesp/README.md)。此前已上传v0.1.1；当前v0.3.0软件构建完成但未烧录，交付详情见第13节。以下原型及早期基线记录不代替本版实物验收。
 
 独立高级模拟原型入口为 [`acousticlab-preview/index.html`](acousticlab-preview/index.html)，使用说明见 [`acousticlab-preview/README.md`](acousticlab-preview/README.md)。该原型无需设备；此前视觉检查通过 [`start-preview.cmd`](acousticlab-preview/start-preview.cmd) 启动，以 `http://127.0.0.1:8000/` 访问。下表的模拟界面能力不表示 C5 已实现对应测量。
 
@@ -966,13 +966,13 @@ K=L_{reference}-L_{measured},\qquad L_{SPL}=L_{dBFS}+K
 
 ### 11.3 实际开工顺序
 
-1. 烧录 C5 v0.1.0 Release 与 ESP v0.1.0，沿用现有 UART 引脚和热点配置；查询确认 IDLE、48 kHz、FFT=2048、测试音关闭。
+1. 烧录 C5 v0.3.0 Release 与 ESP v0.3.0，沿用现有 UART 引脚和热点配置；查询确认 IDLE、48 kHz、FFT=2048、测试音关闭。
 2. PA4 经 1 kΩ 接 PA0，开启 1 kHz、−12 dBFS 测试音和 RTA，记录主频、电平及削顶；再降到 −18 dBFS 验证约 6 dB 差值。
 3. 核对 LEVEL/WAVEFORM/SPECTRUM 的真实更新率、单位、CRC 和串口流量，验证网页控制及生效状态。
 4. 实测 ESP 的 NVS 断电保存、手机重连、UART 断线及 C5 单独复位；确认开机不自动启音。
 5. 改接 MAX4466 OUT 直接输入 ADC，观察真实声音。
 6. 完成 30 分钟运行、带宽和实时预算验收，固定 v0.1。
-7. 再按 v0.2～v1.0 增加后续能力。
+7. 验收4096 FFT、THD、121点扫频、校准和完整谱导出，再推进v0.4。
 
 ## 12. C5 v0.3.0 软件推进（2026-10-05）
 
@@ -981,3 +981,11 @@ K=L_{reference}-L_{measured},\qquad L_{SPL}=L_{dBFS}+K
 实际同源C/CMSIS数值测试、虚拟DMA/UART主循环及项目ESP C++/网页解析检查已完成；软件通过不代替硬件验收。上电IDLE并关闭音，旧查询/RTA/DDS指令保持兼容。用户此前反馈麦克风、串口与PA0基础测试正常；本次没有取得v0.3上板的精度、最坏块耗时、校准重复性或30分钟记录，以上仍待验收。
 
 版本边界：C5功能已推进，浏览器瀑布图、ESP持久化及网页交互验收属于ESP侧工作，不能以C5测试替其勾选。Release静态SRAM占用比原约54 KiB规划略高，仍低于64 KiB物理容量；精确资源、栈占用及待实测项见VALIDATION.md。若最坏路径未达到8 ms目标，应先优化并重新测试，再宣称实时验收通过。
+
+## 13. ESP v0.3.0 软件推进（2026-10-05）
+
+内置网页已补齐H1–H5/THD、121点幅相、原始/校准曲线、相对加权与频带、30秒瀑布图、完整频谱CSV/JSON、校准导入与loop/mic显式保存/IDLE装载。测量运算继续在C5；ESP桥接COMMAND 4–14及MEASUREMENT/DATA_CHUNK，保持单命令在途。STATUS仍32/40 B，模式2=THD、3=SWEEP，详细线协议和JSON动作以esp/videoesp/PROTOCOL.md为准。
+
+未完成完整谱不开放导出；扫频取消/漏收以部分结果导出，暂停和导出使用同组显示数据。校准记录更换增益或路径后提示清除/重装；开机不恢复测试音或测量。loop/mic各保留一份NVS表，C5仅保留当前RAM曲线，后续多历史表管理仍可另行扩展。
+
+39项协议检查、基础15类浏览器场景与6次连续刷新、新增14类浏览器场景通过，真实C5帧由两端解码器接受。Release无警告；资源和交付见ESP VALIDATION/ release/v0.3.0。软件完成不代表实物验收：本次未检测到CH343/COM8，没有烧录v0.3；双板精度、耗时、NVS断电与30分钟稳定性保持待办。

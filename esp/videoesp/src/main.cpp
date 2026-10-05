@@ -20,7 +20,7 @@
 #endif
 
 namespace {
-constexpr char version[]="0.1.1";
+constexpr char version[]="0.3.0";
 constexpr uint32_t commandTimeout=2000, deviceTimeout=3000;
 HardwareSerial c5(1);
 size_t httpInfo(char*,size_t);
@@ -33,7 +33,7 @@ char ssid[24];
 bool storageReady=false, connected=false;
 bool helloPending=false;
 char jsonOutput[2048];
-StaticJsonDocument<1536> request;
+StaticJsonDocument<16384> request;
 uint32_t maxLoopUs=0;
 uint8_t activeClient=0;
 uint32_t lastByte=0, lastFlush=0, lastStats=0, bytesReceived=0, previousBytes=0;
@@ -43,14 +43,29 @@ struct Cache {
   uint8_t bytes[Protocol::capacity]; size_t size=0; uint32_t at=0; bool dirty=false;
   void clear() { size=0; dirty=false; }
   void store(const uint8_t* f,size_t n) { if(dirty) ++coalesced; memcpy(bytes,f,n); size=n; at=millis(); dirty=true; }
-} status, level, spectrum, waveform;
+} status, level, spectrum, waveform, harmonics, bands, extended;
 uint16_t nextSeq=0;
 struct Pending {
   bool active=false, ack=false, freshStatus=false; uint16_t seq=0; uint32_t id=0, since=0;
   uint8_t client=0, command=0; int8_t mode=-1;
   uint32_t frequency=0; int16_t toneLevel=0; bool toneEnabled=false;
+  uint32_t datasetId=0, calId=0;
+  uint16_t fft=0;
+  bool datasetComplete=false; uint16_t datasetCount=0, datasetTotal=0;
+  uint8_t datasetSeen[257]={}; uint32_t datasetSample=0;
 } pending;
+int16_t datasetValues[2049];
+struct CalTransfer { bool active=false; uint8_t kind=0; uint32_t id=0, requestId=0, gainId=0;
+  uint8_t client=0; uint16_t count=0, offset=0; float points[121][3]; } calTransfer;
+void addCalibrationList(JsonArray);
+struct ClearCalibration { bool active=false; uint8_t client=0, kind=0; uint32_t id=0, gain=0; } clearCalibration;
+struct ThdStart { bool active=false; uint8_t client=0; uint32_t id=0; int16_t level=0; } thdStart;
+void continueAdvanced();
+bool capability(uint16_t);
+bool calibrationMatches();
+
 bool online() { return status.size && uint32_t(millis()-status.at)<deviceTimeout; }
+bool capability(uint16_t flag) { return online() && extended.size && (Protocol::u32(extended.bytes+16)&flag); }
 uint8_t mode() { return status.size ? status.bytes[12] : 0; }
 bool generatorSupported() { return online() && (Protocol::u16(status.bytes+14)&Protocol::generatorSupported); }
 template<size_t N> void sendJson(uint8_t client,const StaticJsonDocument<N>& doc) {
@@ -97,11 +112,11 @@ void loadConfig() {
   if(!deserializeJson(doc,value) && validConfig(doc.as<JsonVariantConst>())) copyConfig(doc.as<JsonVariantConst>());
 }
 void hello(uint8_t client) {
-  StaticJsonDocument<1536> doc;
+  StaticJsonDocument<3072> doc;
   doc["event"]="hello"; doc["version"]=version; doc["ssid"]=ssid;
   doc["flash"]=ESP.getFlashChipSize(); doc["psram"]=ESP.getPsramSize();
   doc["storage"]=storageReady; doc["config"]=savedConfig.as<JsonObject>();
-  doc["busy"]=pending.active; sendJson(client,doc);
+  doc["busy"]=pending.active; addCalibrationList(doc.createNestedArray("calibrations")); sendJson(client,doc);
 }
 size_t httpInfo(char* out,size_t size) {
   StaticJsonDocument<768> doc;
@@ -131,7 +146,7 @@ void statistics() {
 void finish(const char* message,int result) {
   event(pending.client,"result",pending.id,message,pending.seq,result);
   Serial.printf("C5 result: seq=%u code=%d %s\n",pending.seq,result,message);
-  pending.active=false;
+  pending.active=false; calTransfer.active=false; thdStart.active=false; clearCalibration.active=false;
 }
 void tryComplete() {
   if(!pending.active || !pending.ack || !pending.freshStatus) return;
@@ -142,12 +157,22 @@ void tryComplete() {
     if(enabled!=pending.toneEnabled || Protocol::u32(status.bytes+44)!=pending.frequency ||
        int16_t(Protocol::u16(status.bytes+48))!=pending.toneLevel) return;
   }
+  if(pending.command==4 && Protocol::u16(status.bytes+20)!=pending.fft) return;
+  if(pending.command==7 && mode()!=pending.mode) return;
+  if(pending.command==5 && !pending.datasetComplete) return;
+  if(pending.command==14 && (!extended.size || int32_t(extended.at-pending.since)<0 ||
+      (calTransfer.active && (Protocol::u32(extended.bytes+28)!=calTransfer.id || extended.bytes[23]!=calTransfer.kind || Protocol::u32(extended.bytes+24)!=calTransfer.gainId || extended.bytes[32])) ||
+      (clearCalibration.active && (Protocol::u32(extended.bytes+28)!=0 || Protocol::u32(extended.bytes+24)!=clearCalibration.gain)))) return;
+  if((calTransfer.active && pending.command!=14) || (thdStart.active && pending.command==3) || (clearCalibration.active && pending.command!=14)) {
+    pending.active=false; continueAdvanced(); return;
+  }
   finish("confirmed",0);
 }
 void sendCommand(uint8_t client,uint32_t id,uint8_t command,int modeValue=-1,
                  uint32_t frequency=0,int16_t toneLevel=0,bool enabled=false) {
   if(pending.active) { event(client,"error",id,"busy"); return; }
   if(command!=1 && !online()) { event(client,"error",id,"device_offline"); return; }
+  if((command==3 || (command==2 && modeValue==1)) && !calibrationMatches()) { event(client,"error",id,"calibration_path_mismatch"); return; }
   if(command==3 && !generatorSupported()) { event(client,"error",id,"unsupported"); return; }
   uint8_t payload[8]={command}, frame[22]; uint16_t n=1;
   if(command==2) { payload[1]=modeValue; n=2; }
@@ -160,27 +185,41 @@ void sendCommand(uint8_t client,uint32_t id,uint8_t command,int modeValue=-1,
   Serial.printf("C5 command: seq=%u command=%u\n",seq,command);
   event(client,"sent",id,"awaiting_reply",seq);
 }
+#include "advanced_bridge.h"
 void received(const uint8_t* f,size_t n) {
   ++framesReceived;
   switch(f[3]) {
     case 1: {
       const uint32_t uptime=Protocol::u32(f+40);
       if(haveUptime && int32_t(uptime-lastC5Uptime)<0) {
-        ++restarts; level.clear(); waveform.clear(); spectrum.clear();
+        ++restarts; level.clear(); waveform.clear(); spectrum.clear(); harmonics.clear(); bands.clear(); extended.clear();
         if(pending.active) finish("device_restarted",-1);
         if(connected) event(activeClient,"device_restarted",0,"device_restarted");
       }
-      haveUptime=true; lastC5Uptime=uptime; status.store(f,n);
-      if(mode()==0) { level.clear(); waveform.clear(); spectrum.clear(); }
+      haveUptime=true; lastC5Uptime=uptime;
+      if(status.size && (status.bytes[12]!=f[12] || Protocol::u16(status.bytes+20)!=Protocol::u16(f+20) ||
+         (n>=54 && status.size>=54 && memcmp(status.bytes+44,f+44,6)))) { harmonics.clear(); bands.clear(); }
+      status.store(f,n);
+      if(!(Protocol::u16(f+14)&0x1c00)) extended.clear();
+      if(mode()==0) { level.clear(); waveform.clear(); spectrum.clear(); harmonics.clear(); bands.clear(); }
       if(pending.active) { pending.freshStatus=true; tryComplete(); }
       break;
     }
-    case 2: if(online() && mode()==1) level.store(f,n); break;
+    case 2: if(online() && mode()>0) level.store(f,n); break;
     case 3:
       if(online() && mode()==1 && Protocol::u16(status.bytes+20)==Protocol::u16(f+16) &&
          Protocol::u32(status.bytes+16)==Protocol::u32(f+12)) spectrum.store(f,n);
       break;
-    case 4: if(online() && mode()==1) waveform.store(f,n); break;
+    case 4: if(online() && mode()>0) waveform.store(f,n); break;
+    case 5:
+      if(!online()) break;
+      if(f[13]==3) { extended.store(f,n); tryComplete(); }
+      else if(f[13]==1 && mode()==2 && capability(Protocol::harmonicsSupported)) harmonics.store(f,n);
+      else if(f[13]==4 && capability(32)) bands.store(f,n);
+      else if(f[13]==2 && mode()==3 && capability(Protocol::sweepSupported) && connected) ws.sendBIN(activeClient,const_cast<uint8_t*>(f),n);
+      break;
+    case 6:
+      receiveChunk(f,n); break;
     case 8:
       if(!pending.active || Protocol::u16(f+4)!=pending.seq || f[12]!=pending.command) break;
       if(f[13]!=0) { finish("rejected",f[13]); break; }
@@ -196,7 +235,7 @@ void pollC5() {
 }
 void flush() {
   const uint32_t now=millis(); if(uint32_t(now-lastFlush)<100) return; lastFlush=now;
-  Cache* caches[]={&status,&level,&spectrum,&waveform};
+  Cache* caches[]={&status,&level,&spectrum,&waveform,&harmonics,&bands,&extended};
   for(Cache* cache:caches) {
     if(!cache->dirty) continue;
     cache->dirty=false;
@@ -212,14 +251,18 @@ void onWebSocket(uint8_t client,WStype_t type,uint8_t* payload,size_t size) {
   }
   if(type==WStype_DISCONNECTED) {
     Serial.printf("WS disconnected: client=%u\n",client);
-    if(client==activeClient) { connected=false; helloPending=false; }
+    if(client==activeClient) {
+      if(pending.active && (pending.command==5 || calTransfer.active || thdStart.active)) finish("client_disconnected",-1);
+      connected=false; helloPending=false;
+    }
     return;
   }
   if(type!=WStype_TEXT) return;
-  if(size>768) { event(client,"error",0,"invalid_request"); return; }
+  if(size>12288) { event(client,"error",0,"invalid_request"); return; }
   request.clear();
-  if(deserializeJson(request,payload,size,DeserializationOption::NestingLimit(3))) { event(client,"error",0,"invalid_request"); return; }
+  if(deserializeJson(request,payload,size,DeserializationOption::NestingLimit(5))) { event(client,"error",0,"invalid_request"); return; }
   const uint32_t id=request["id"]|0U; const char* action=request["action"]|"";
+  if(advancedRequest(client,id,action)) return;
   if(!strcmp(action,"save")) {
     if(!validConfig(request["config"])) { event(client,"error",id,"invalid_config"); return; }
     if(!storageReady) { event(client,"error",id,"storage_failed"); return; }
@@ -242,7 +285,7 @@ void onWebSocket(uint8_t client,WStype_t type,uint8_t* payload,size_t size) {
 }
 } // namespace
 void setup() {
-  Serial.begin(115200); c5.setRxBufferSize(4096); c5.begin(115200,SERIAL_8N1,C5_UART_RX_PIN,C5_UART_TX_PIN);
+  Serial.begin(115200); c5.setRxBufferSize(4096); c5.setTxBufferSize(256); c5.begin(115200,SERIAL_8N1,C5_UART_RX_PIN,C5_UART_TX_PIN);
   loadConfig(); WiFi.mode(WIFI_AP); WiFi.setSleep(false);
   snprintf(ssid,sizeof(ssid),"AcousticLab-%04X",unsigned(ESP.getEfuseMac()&0xffff));
   if(!WiFi.softAP(ssid,ACOUSTICLAB_AP_PASSWORD,1,false,1)) { Serial.println("SoftAP start failed"); return; }
@@ -257,12 +300,12 @@ void loop() {
   pollC5(); http.loop(); ws.loop(); pollC5();
   if(helloPending && connected) {
     helloPending=false; hello(activeClient);
-    Cache* caches[]={&status,&level,&spectrum,&waveform};
+    Cache* caches[]={&status,&level,&spectrum,&waveform,&harmonics,&bands,&extended};
     for(Cache* cache:caches) if(cache->size) cache->dirty=true;
     statistics();
   }
   flush();
-  if(pending.active && uint32_t(millis()-pending.since)>=commandTimeout) finish(pending.ack ? "status_timeout" : "reply_timeout",-1);
+  if(pending.active && uint32_t(millis()-pending.since)>=(pending.command==5 ? 5000U : commandTimeout)) finish(pending.ack ? "status_timeout" : "reply_timeout",-1);
   if(uint32_t(millis()-lastStats)>=1000) statistics();
   esp_task_wdt_reset();
   maxLoopUs=max(maxLoopUs,uint32_t(micros()-began));
