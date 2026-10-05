@@ -23,6 +23,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
   app/board.c
   app/generator.c
   app/dsp.c
+  app/measurement.c
+  app/calibration.c
   stm32c5xx_drivers/hal/stm32c5xx_hal_iwdg.c
 )
 
@@ -31,7 +33,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
   app
 )
 
-set_source_files_properties(main.c app/audio.c app/protocol_codec.c app/protocol_uart.c app/board.c app/generator.c app/dsp.c
+set_source_files_properties(main.c app/audio.c app/protocol_codec.c app/protocol_uart.c app/board.c app/generator.c app/dsp.c app/measurement.c app/calibration.c
   PROPERTIES COMPILE_OPTIONS "-Werror")
 
 target_compile_definitions(${CMAKE_PROJECT_NAME} PUBLIC

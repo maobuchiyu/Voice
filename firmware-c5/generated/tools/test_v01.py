@@ -18,7 +18,7 @@ os.environ['PATH'] = str(gcc.parent) + os.pathsep + os.environ['PATH']
 build = ROOT / 'build' / 'host-v01'
 build.mkdir(parents=True, exist_ok=True)
 source = ROOT / 'arch' / 'cmsis_dsp' / 'Source'
-sources = [ROOT/'app'/name for name in ('generator.c', 'dsp.c', 'protocol_codec.c')]
+sources = [ROOT/'app'/name for name in ('generator.c', 'dsp.c', 'protocol_codec.c', 'calibration.c', 'measurement.c')]
 sources += [source/'TransformFunctions'/name for name in (
     'arm_rfft_fast_init_f32.c', 'arm_rfft_fast_f32.c', 'arm_cfft_init_f32.c',
     'arm_cfft_f32.c', 'arm_cfft_radix8_f32.c', 'arm_bitreversal2.c')]

@@ -1,3 +1,40 @@
+# C5 v0.3.0 验证记录
+
+日期：2026-10-05。本次仅操作源码、构建和PC软件测试，未烧录或实测v0.3开发板。
+
+| 检查 | 结果 |
+|---|---|
+| Release构建 | 成功；text=119088、data=136、bss=56712 B，无warning/error，自写源启用-Werror |
+| Debug CLI重新生成及构建 | 成功；text=152848、data=128、bss=56712 B；最后保留Debug配置供VS Code使用 |
+| Release Flash | 119224 B（116.43 KiB），低于224 KiB规划上限 |
+| Release SRAM | 56848 B（55.52 KiB），含4096 B栈及512 B堆预留；低于65536 B物理容量，剩8688 B；比原约54 KiB目标高1.52 KiB |
+| 主要静态工作区 | 整数历史8 KiB、FFT输入/输出合计32 KiB；冻结谱复用输入低端，ADC/DAC快照复用工作区高端，无长录音数组 |
+| 静态栈报告 | protocol_uart_poll=1344 B、audio_poll=344 B、DSP push_sample=176 B、measurement push=184 B、solve=576 B；这些不是完整调用链高水位，4 KiB栈仍待真机检查 |
+| 基线回归 | test_v01.py，7项通过，CRC、DDS、FFT、主循环/故障、控制和吞吐 |
+| v0.3算法/协议 | test_v03.py，6项通过，实际同源app C及官方CMSIS执行 |
+| 解析互通 | 同一实际C5输出由当前项目ESP的protocol.h及网页protocol.js接受，包含状态、功率、完整谱、扩展状态、THD、扫频和校准回复 |
+
+数值检查：4096点幅度误差<0.2 dB，Z功率与正弦RMS误差<0.1 dB；约1 kHz的A/C与Z差<0.1 dB。100、1000、1001和4000 Hz合成H1～H5，THD相对误差<5%、每阶幅度误差<2%、相位误差<0.002 rad；非整周期窗口采用DC+sin/cos最小二乘消除交叉泄漏。121点扫频全部完成、频率网格误差<1e-5相对值，完成后关闭扫频音。弱基波/削顶/禁用音无效判定、校准事务、log频率插值、相位展开、路径/增益失效及SPL入口通过。
+
+完整4096谱导出：实际UART主循环在900 ms虚拟窗口内发送9块、2049个bin，同一dataset/sample_index，偏移连续且CRC正确；期间成功处理音频块>80且采样仍运行。冻结时不更新FFT，新频谱/波形预览暂停，电平和DAC继续；末块DMA结束才释放。
+
+60秒48 kHz虚拟DMA+115200/8N1线路时间：LEVEL、WAVEFORM、SPECTRUM各599帧（9.983 Hz），总流量8650.4 B/s，低于9 KB/s目标。PC测试不模拟ARM计算时间、真实IRQ抢占或模拟电路误差，不据此宣称真机10 Hz或<8 ms已经通过。
+
+复现：`py tools/test_v01.py`、`py tools/test_v03.py`，需要MinGW GCC/G++和Node。默认使用tools/host内已核对的ESP协议快照，使C5提交可独立复现；PowerShell设置 `$env:C5_LIVE_ESP="1"` 后运行test_v03.py，可直接核对当前esp/videoesp实际代码（该ESP也须支持此v0.3契约）。本次快照及实际代码两种模式都通过；`./build.ps1 -Profile Release -Regenerate`、`./build.ps1 -Profile Debug -Regenerate`。日志位于build/v03-release.log、build/v03-debug.log；本机版本包位于release/v0.3.0。
+
+## v0.3上板验收（待完成）
+
+1. 烧录Release HEX，查询旧STATUS与命令14扩展状态，确认版本/能力、IDLE、48 kHz、2048、音关闭。
+2. PA4经1 kΩ接PA0，共地，断开麦克风/可调电源。先1 kHz/−12 dBFS，再−18 dBFS，记录峰值/RMS/THD、6 dB差值误差及回环重复性；不能用同源回环证明绝对采样时钟精度。
+3. 检查100 Hz、1 kHz、4 kHz的H1～H5、500 ms积分、无效标记，以及121点扫频从20至20000 Hz、停止/扫完关闭输出。固定电气幅相需记录并生成回环校准，声传播延迟不当成硬件误差删除。
+4. IDLE加载回环/麦克风曲线，确认只影响匹配路径；变更增益使旧曲线/SPL失效，C5复位后需ESP重载。真实SPL需可信参考设备，此前保持相对单位。
+5. 在2048/4096、校准开/关及THD/扫频路径记录worst_block_us，目标<8000 us；测栈高水位、UART坏帧、采样丢块、DAC错误、完整谱真机导出<1秒和运行30分钟稳定性。
+6. 双板网页验收：串口/网络断线重连、暂停、参数生效、文件导出和桌面/窄屏显示；当前未据软件检查勾选这些项目。
+
+用户此前反馈PA0基础输入、麦克风和串口正常；该反馈不作为v0.3高级测量精度验收。下面保留v0.1历史软件和待测记录。
+
+---
+
 # C5 v0.1.0 验证记录
 
 日期：2026-10-01。此记录区分软件检查与实物验收；本次没有烧录或操作开发板。

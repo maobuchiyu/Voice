@@ -26,14 +26,27 @@ typedef enum {
 typedef enum {
     CMD_GET_STATUS = 1,       /* 请求立即发送状态。 */
     CMD_SET_MODE = 2,         /* 请求切换运行模式。 */
-    CMD_SET_TONE = 3          /* 独立测试音：使能、Hz、峰值 centidB。 */
+    CMD_SET_TONE = 3,         /* 独立测试音：使能、Hz、峰值 centidB。 */
+    CMD_SET_FFT=4,
+    CMD_SNAPSHOT=5,
+    CMD_EXPORT_ABORT=6,
+    CMD_MEASURE=7,
+    CMD_CAL_BEGIN = 8,
+    CMD_CAL_CHUNK = 9,
+    CMD_CAL_COMMIT = 10,
+    CMD_CAL_ABORT = 11,
+    CMD_INPUT_PATH = 12,
+    CMD_SPL_OFFSET = 13,
+    CMD_EXTENDED_STATUS = 14
 } command_id_t;
 
 typedef enum {
     REPLY_OK = 0,
     REPLY_BAD_LENGTH = 1,
     REPLY_BAD_ARGUMENT = 2,
-    REPLY_UNSUPPORTED = 3
+    REPLY_UNSUPPORTED = 3,
+    REPLY_BUSY = 4,
+    REPLY_NOT_READY = 5
 } reply_code_t;
 
 /* 已解析的命令帧；负载上限只针对接收命令。 */

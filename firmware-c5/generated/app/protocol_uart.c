@@ -3,10 +3,13 @@
 #include "audio.h"
 #include "generator.h"
 #include "dsp.h"
+#include "measurement.h"
+#include "calibration.h"
 #include "mx_usart2.h"
 #include "protocol_codec.h"
 #include "stm32_hal.h"
 #include <string.h>
+#include <math.h>
 
 enum { RX_RING_SIZE = 512, STATUS_PERIOD_MS = 1000, LEVEL_PERIOD_MS = 100,
        WAVEFORM_PERIOD_MS = 100 };
@@ -38,6 +41,11 @@ static uint8_t status_requested;
 static uint8_t reply_pending;
 static uint16_t reply_seq;
 static uint8_t reply_payload[4];
+static uint32_t dataset_id, last_power_ms;
+static uint16_t export_offset;
+static uint8_t exporting, export_finishing, extended_requested;
+static uint16_t read_u16(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1]<<8); }
+static float read_f32(const uint8_t *p) { uint32_t bits=(uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); float value; memcpy(&value,&bits,4); return value; }
 
 static void write_u16(uint8_t *p, uint16_t value)
 {
@@ -149,7 +157,11 @@ static void handle_command(const protocol_packet_t *command)
     } else if (command->payload[0] == CMD_SET_MODE) {
         if (command->length != 2U) result = REPLY_BAD_LENGTH;
         else if (command->payload[1] > AUDIO_MODE_RTA) result = REPLY_BAD_ARGUMENT;
-        else audio_request_mode((audio_mode_t)command->payload[1]);
+        else if(exporting || calibration_loading()) result=REPLY_BUSY;
+        else {
+            measurement_cancel();
+            audio_request_mode((audio_mode_t)command->payload[1]);
+        }
     } else if (command->payload[0] == CMD_SET_TONE) {
         if (command->length != 8U) result = REPLY_BAD_LENGTH;
         else {
@@ -160,12 +172,64 @@ static void handle_command(const protocol_packet_t *command)
                                         ((uint16_t)command->payload[7] << 8));
             if (config.enabled > 1U || config.frequency_hz < 20U || config.frequency_hz > 20000U ||
                 config.peak_centidb < -4000 || config.peak_centidb > -600) result = REPLY_BAD_ARGUMENT;
+            else if(measurement_active()) result=REPLY_BUSY;
             else generator_request(&config);
         }
+    } else if(command->payload[0]==CMD_SET_FFT) {
+        if(command->length!=3) result=REPLY_BAD_LENGTH;
+        else if(read_u16(command->payload+1)!=2048 && read_u16(command->payload+1)!=4096) result=REPLY_BAD_ARGUMENT;
+        else if(exporting || measurement_active() || calibration_loading()) result=REPLY_BUSY;
+        else if(dsp_set_length(read_u16(command->payload+1))) result=REPLY_NOT_READY;
+    } else if(command->payload[0]==CMD_SNAPSHOT) {
+        if(command->length!=1) result=REPLY_BAD_LENGTH;
+        else if(exporting || measurement_active() || calibration_loading()) result=REPLY_BUSY;
+        else if(dsp_freeze()) result=REPLY_NOT_READY;
+        else { exporting=1; export_finishing=0; export_offset=0; if(++dataset_id==0) ++dataset_id; }
+    } else if(command->payload[0]==CMD_EXPORT_ABORT) {
+        if(command->length!=1) result=REPLY_BAD_LENGTH;
+        else { exporting=export_finishing=0; dsp_release(); }
+    } else if(command->payload[0]==CMD_MEASURE) {
+        if(command->length!=4) result=REPLY_BAD_LENGTH;
+        else if(command->payload[1]!=MEASURE_THD && command->payload[1]!=MEASURE_SWEEP) result=REPLY_BAD_ARGUMENT;
+        else if(exporting || measurement_active() || calibration_loading()) result=REPLY_BUSY;
+        else if(measurement_start(command->payload[1],(int16_t)read_u16(command->payload+2))) result=REPLY_NOT_READY;
+        else audio_request_mode(command->payload[1]==MEASURE_THD ? AUDIO_MODE_THD : AUDIO_MODE_SWEEP);
+    } else if(command->payload[0]==CMD_CAL_BEGIN) {
+        if(command->length!=12) result=REPLY_BAD_LENGTH;
+        else if(!audio_is_idle() || exporting || measurement_active()) result=REPLY_BUSY;
+        else if(calibration_begin(read_u32(command->payload+1),command->payload[5],read_u32(command->payload+6),read_u16(command->payload+10))) result=REPLY_BAD_ARGUMENT;
+    } else if(command->payload[0]==CMD_CAL_CHUNK) {
+        if(command->length<4 || command->length!=4U+12U*command->payload[3] || command->payload[3]>10) result=REPLY_BAD_LENGTH;
+        else if(!audio_is_idle()) result=REPLY_BUSY;
+        else {
+            calibration_point_t points[10];
+            for(uint32_t i=0;i<command->payload[3];++i) {
+                const uint8_t *p=command->payload+4+12*i;
+                points[i]=(calibration_point_t){read_f32(p),read_f32(p+4),read_f32(p+8)};
+            }
+            if(calibration_append(read_u16(command->payload+1),points,command->payload[3])) result=REPLY_BAD_ARGUMENT;
+        }
+    } else if(command->payload[0]==CMD_CAL_COMMIT || command->payload[0]==CMD_CAL_ABORT) {
+        if(command->length!=1) result=REPLY_BAD_LENGTH;
+        else if(!audio_is_idle()) result=REPLY_BUSY;
+        else if(command->payload[0]==CMD_CAL_ABORT) calibration_abort();
+        else if(calibration_commit()) result=REPLY_NOT_READY;
+    } else if(command->payload[0]==CMD_INPUT_PATH) {
+        if(command->length!=6) result=REPLY_BAD_LENGTH;
+        else if(!audio_is_idle() || exporting || calibration_loading() || measurement_active()) result=REPLY_BUSY;
+        else if(command->payload[1]!=CAL_LOOP && command->payload[1]!=CAL_MIC) result=REPLY_BAD_ARGUMENT;
+        else calibration_path(command->payload[1],read_u32(command->payload+2));
+    } else if(command->payload[0]==CMD_SPL_OFFSET) {
+        if(command->length!=9) result=REPLY_BAD_LENGTH;
+        else if(!audio_is_idle() || calibration_loading()) result=REPLY_BUSY;
+        else if(calibration_set_spl(read_f32(command->payload+1),read_u32(command->payload+5))) result=REPLY_BAD_ARGUMENT;
+    } else if(command->payload[0]==CMD_EXTENDED_STATUS) {
+        if(command->length!=1) result=REPLY_BAD_LENGTH;
+        else extended_requested=1;
     } else result = REPLY_UNSUPPORTED;
     queue_reply(command, result);
     /* 请求立即上报；块边界提交后的周期 STATUS 用于确认配置已生效。 */
-    if (result == REPLY_OK) status_requested = 1U;
+    if (result == REPLY_OK) status_requested=1;
 }
 
 int protocol_uart_start(void)
@@ -229,9 +293,9 @@ void protocol_uart_poll(void)
         generator_get_config(&tone);
         payload[0] = (uint8_t)status.mode;
         payload[1] = (uint8_t)audio_is_running();
-        write_u16(payload + 2, (uint16_t)((status.flags & ~1U) | 0x0100U | (tone.enabled ? 0x0200U : 0U)));
+        write_u16(payload + 2, (uint16_t)((status.flags & ~1U) | 0x1D00U | (tone.enabled ? 0x0200U : 0U)));
         write_u32(payload + 4, AUDIO_SAMPLE_RATE);
-        write_u16(payload + 8, DSP_FFT_LENGTH);
+        write_u16(payload + 8, dsp_get_length());
         write_u16(payload + 10, (uint16_t)preview_skips); /* 预览调度跳过计数低 16 位。 */
         write_u32(payload + 12, status.completed_blocks);
         write_u32(payload + 16, status.lost_blocks);
@@ -249,7 +313,41 @@ void protocol_uart_poll(void)
         return;
     }
 
-    if (status.mode == AUDIO_MODE_RTA &&
+    if(extended_requested) {
+        uint8_t payload[28]={1,3}; float unused;
+        write_u16(payload+2,0x0300); write_u32(payload+4,0x3FU);
+        write_u16(payload+8,dsp_get_length()); payload[10]=(uint8_t)status.mode; payload[11]=calibration_current_path();
+        write_u32(payload+12,calibration_gain_id()); write_u32(payload+16,calibration_id());
+        payload[20]=(uint8_t)calibration_loading(); payload[21]=(uint8_t)measurement_active();
+        payload[22]=(uint8_t)calibration_spl(0,&unused); payload[23]=exporting;
+        write_u32(payload+24,now);
+        if(send_frame(MSG_MEASUREMENT,outgoing_seq,status.sample_index,payload,sizeof(payload))) { ++outgoing_seq; extended_requested=0; }
+        return;
+    }
+    measurement_result_t measurement;
+    if(measurement_get(&measurement)) {
+        uint8_t payload[204]={1,measurement.kind};
+        write_u16(payload+2,measurement.reason); write_u32(payload+4,measurement.sequence);
+        write_u32(payload+8,measurement.samples); write_u32(payload+12,measurement.calibration_id);
+        write_u16(payload+16,measurement.point); write_u16(payload+18,measurement.point_count);
+        payload[20]=measurement.harmonic_mask; payload[21]=calibration_current_path();
+        write_f32(payload+24,fminf(measurement.kind==MEASURE_THD ? 4000 : 20000,fmaxf(measurement.kind==MEASURE_THD ? 100 : 20,measurement.frequency)));
+        write_f32(payload+28,measurement.transfer_db); write_f32(payload+32,measurement.transfer_phase);
+        write_f32(payload+36,measurement.thd_percent); write_f32(payload+40,measurement.thd_db);
+        for(uint32_t i=0;i<5;++i) {
+            const harmonic_result_t *h=&measurement.harmonic[i]; uint8_t *p=payload+44+i*32;
+            write_f32(p,h->frequency); write_f32(p+4,h->amplitude); write_f32(p+8,h->dbfs);
+            write_f32(p+12,h->dbc); write_f32(p+16,h->percent); write_f32(p+20,h->phase);
+            write_f32(p+24,h->corrected_dbfs); write_f32(p+28,h->corrected_phase);
+        }
+        if(send_frame(MSG_MEASUREMENT,outgoing_seq,measurement.end_index,payload,sizeof(payload))) { ++outgoing_seq; measurement_consume(); }
+        return;
+    }
+    if(export_finishing) {
+        exporting=export_finishing=0; dsp_release();
+        last_waveform_ms=last_spectrum_ms=now; spectrum_sent=0;
+    }
+    if (status.mode != AUDIO_MODE_IDLE &&
         (uint32_t)(now - last_level_ms) >= LEVEL_PERIOD_MS) {
         uint8_t payload[32];
         write_f32(payload, status.rms_dbfs);
@@ -269,7 +367,34 @@ void protocol_uart_poll(void)
         return;
     }
 
-    if (status.mode == AUDIO_MODE_RTA &&
+    if(exporting) {
+        uint8_t payload[494]={0}; int16_t values[236];
+        uint16_t count=dsp_snapshot_read(export_offset,values,236);
+        if(!count) { exporting=0; dsp_release(); return; }
+        write_u32(payload,dataset_id); payload[4]=1; payload[5]=1;
+        write_u16(payload+6,dsp_get_length()); write_u32(payload+8,AUDIO_SAMPLE_RATE);
+        write_u16(payload+12,(uint16_t)(dsp_get_length()/2+1)); write_u16(payload+14,export_offset);
+        write_u16(payload+16,count); write_u32(payload+18,calibration_id());
+        for(uint32_t i=0;i<count;++i) write_u16(payload+22+2*i,(uint16_t)values[i]);
+        if(send_frame(MSG_DATA_CHUNK,outgoing_seq,dsp_result_index(),payload,(uint16_t)(22+count*2))) {
+            ++outgoing_seq; export_offset+=count;
+            if(export_offset==dsp_get_length()/2+1) export_finishing=1;
+        }
+        return;
+    }
+    if(status.mode==AUDIO_MODE_RTA && (uint32_t)(now-last_power_ms)>=1000U) {
+        dsp_power_t power;
+        if(dsp_get_power(&power)) {
+            uint8_t payload[56]={1,4}; float spl;
+            write_f32(payload+4,power.z_dbfs); write_f32(payload+8,power.a_dbfs); write_f32(payload+12,power.c_dbfs);
+            write_u16(payload+16,power.octave_valid); write_u16(payload+18,8);
+            for(uint32_t i=0;i<8;++i) write_f32(payload+20+4*i,power.octave_dbfs[i]);
+            if(calibration_spl(status.rms_dbfs,&spl)) { payload[2]=1; write_f32(payload+52,spl); }
+            if(send_frame(MSG_MEASUREMENT,outgoing_seq,power.index,payload,sizeof(payload))) { ++outgoing_seq; last_power_ms=now; }
+            return;
+        }
+    }
+    if (status.mode == AUDIO_MODE_RTA && !exporting &&
         (uint32_t)(now - last_waveform_ms) >= WAVEFORM_PERIOD_MS) {
         uint16_t pairs[AUDIO_WAVEFORM_GROUPS * 2U];
         uint32_t first_sample_index;
@@ -291,13 +416,13 @@ void protocol_uart_poll(void)
         }
         return;
     }
-    if (status.mode == AUDIO_MODE_RTA && (uint32_t)(now - last_spectrum_ms) >= 100U) {
+    if (status.mode == AUDIO_MODE_RTA && !exporting && (uint32_t)(now - last_spectrum_ms) >= 100U) {
         int16_t levels[DSP_PREVIEW_POINTS];
         uint32_t index;
         if (dsp_get_spectrum(levels, &index) && (!spectrum_sent || index != last_spectrum_index)) {
             uint8_t payload[520];
             write_u32(payload, AUDIO_SAMPLE_RATE);
-            write_u16(payload + 4, DSP_FFT_LENGTH);
+            write_u16(payload + 4, dsp_get_length());
             write_u16(payload + 6, DSP_PREVIEW_POINTS);
             for (uint32_t i = 0; i < DSP_PREVIEW_POINTS; ++i) write_u16(payload + 8 + i * 2U, (uint16_t)levels[i]);
             if (send_frame(MSG_SPECTRUM_PREVIEW, outgoing_seq, index, payload, sizeof(payload))) {

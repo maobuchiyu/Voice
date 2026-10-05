@@ -2,6 +2,8 @@
 #include "board.h"
 #include "generator.h"
 #include "dsp.h"
+#include "measurement.h"
+#include "calibration.h"
 
 #include "mx_adc1.h"
 #include "mx_dac1.h"
@@ -23,9 +25,9 @@ static uint32_t handled_dac_seq;
 static uint32_t dac_refill_misses;
 static uint8_t running;
 /* DMA 数据先复制到独立快照，后续 FFT 不再读取可能被覆盖的 DMA 半区。 */
-static uint16_t adc_block[AUDIO_HALF_SAMPLES];
-static uint16_t dac_block[AUDIO_HALF_SAMPLES];
-static float normalized_block[AUDIO_HALF_SAMPLES];
+/* 借用FFT区的块暂存，按主循环执行顺序复用，不增加4 KiB独立工作数组。 */
+#define adc_block (dsp_adc_workspace())
+#define dac_block (dsp_dac_workspace())
 static volatile uint32_t dac_errors;
 static uint32_t handled_seq;
 static uint32_t lost_blocks;
@@ -100,13 +102,13 @@ static void service_output(void)
         peripheral_fault |= 8U;
         return;
     }
-    generator_render(dac_block, AUDIO_HALF_SAMPLES);
+    generator_render_at(dac_block, AUDIO_HALF_SAMPLES, (seq+1U)*AUDIO_HALF_SAMPLES);
     if (dac_seq != seq) {
         ++dac_refill_misses;
         peripheral_fault |= 8U;
         return;
     }
-    memcpy(dac_samples + half * AUDIO_HALF_SAMPLES, dac_block, sizeof(dac_block));
+    memcpy(dac_samples + half * AUDIO_HALF_SAMPLES, dac_block, AUDIO_HALF_SAMPLES*sizeof(uint16_t));
     if (dac_seq != seq) {
         ++dac_refill_misses;
         peripheral_fault |= 8U;
@@ -121,6 +123,8 @@ int audio_start(void)
     hal_tim_handle_t *timer = mx_tim6_gethandle();
 
     generator_init();
+    measurement_init();
+    calibration_init();
     if (dsp_init() != 0) return -6;
 
     /* 上电预填 12 位 DAC 中点 2048；必须收到独立启音命令才产生交流。 */
@@ -158,6 +162,7 @@ void audio_poll(void)
         (void)HAL_DAC_StopChannel_DMA(mx_dac1_gethandle(), HAL_DAC_CHANNEL_1);
         running = 0U;
         dsp_reset();
+        measurement_cancel();
         return;
     }
     uint32_t irq_state = __get_PRIMASK();
@@ -169,15 +174,17 @@ void audio_poll(void)
     if (delta > 1U) {
         /* 主循环落后时累计丢块，并重置去直流滤波器状态，避免跨缺口延续。 */
         lost_blocks += delta - 1U;
+        measurement_gap();
         dc_prev_input = 0.0f;
         dc_prev_output = 0.0f;
         dsp_reset();
     }
     handled_seq = seq;
-    memcpy(adc_block, adc_samples + half * AUDIO_HALF_SAMPLES, sizeof(adc_block));
+    memcpy(adc_block, adc_samples + half * AUDIO_HALF_SAMPLES, AUDIO_HALF_SAMPLES*sizeof(uint16_t));
     __DMB();
     if (completed_seq != seq) {
         ++lost_blocks;
+        measurement_gap();
         dc_prev_input = dc_prev_output = 0.0f;
         dsp_reset();
         return;
@@ -211,7 +218,6 @@ void audio_poll(void)
         const float y = x - dc_prev_input + 0.9997382f * dc_prev_output;
         dc_prev_input = x;
         dc_prev_output = y;
-        normalized_block[i] = y;
         sum_sq += y * y;
         const float magnitude = fabsf(y);
         if (magnitude > peak) peak = magnitude;
@@ -223,12 +229,19 @@ void audio_poll(void)
     memcpy(waveform_pairs, preview, sizeof(waveform_pairs));
     waveform_first_sample_index = (seq - 1U) * AUDIO_HALF_SAMPLES;
     waveform_valid = 1U;
-    if (current_mode == AUDIO_MODE_RTA) {
+    if (current_mode != AUDIO_MODE_IDLE) {
         /* dBFS 以满幅 1.0 为基准；接近静音时使用 -120 dBFS 作为下限。 */
         float rms = sqrtf(sum_sq / (float)AUDIO_HALF_SAMPLES);
         rms_dbfs = (rms > 0.000001f) ? 20.0f * log10f(rms) : -120.0f;
         peak_dbfs = (peak > 0.000001f) ? 20.0f * log10f(peak) : -120.0f;
-        dsp_push(normalized_block, AUDIO_HALF_SAMPLES, seq * AUDIO_HALF_SAMPLES);
+        if(current_mode==AUDIO_MODE_RTA) dsp_push_raw(samples, AUDIO_HALF_SAMPLES, seq*AUDIO_HALF_SAMPLES);
+        else {
+            generator_reference_t reference;
+            uint32_t first=(seq-1U)*AUDIO_HALF_SAMPLES;
+            int ready=generator_reference(first,&reference);
+            measurement_push_raw(samples,AUDIO_HALF_SAMPLES,first,ready ? &reference : 0,clipped);
+            if(!measurement_active()) requested_mode=AUDIO_MODE_IDLE;
+        }
     }
     service_output();
     /* TIM2 1 MHz 时基包含本次 RMS、FFT 和 DDS 开销，可实测 <8 ms 要求。 */
@@ -263,3 +276,4 @@ int audio_get_waveform_preview(uint16_t *min_max_pairs, uint32_t *first_sample_i
     return 1;
 }
 int audio_is_running(void) { return running; }
+int audio_is_idle(void) { return current_mode==AUDIO_MODE_IDLE && requested_mode==AUDIO_MODE_IDLE; }
